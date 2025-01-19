@@ -1,12 +1,15 @@
-import type { LocaleTimeDate } from "components/system/Taskbar/Clock/functions";
+import { useTheme } from "styled-components";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { measureText } from "components/system/Files/FileEntry/functions";
 import StyledClock from "components/system/Taskbar/Clock/StyledClock";
+import { type LocaleTimeDate } from "components/system/Taskbar/Clock/functions";
 import useClockContextMenu from "components/system/Taskbar/Clock/useClockContextMenu";
-import type { Size } from "components/system/Window/RndWindow/useResizable";
+import { type Size } from "components/system/Window/RndWindow/useResizable";
 import { useSession } from "contexts/session";
 import useWorker from "hooks/useWorker";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BASE_CLOCK_WIDTH,
+  CLOCK_CANVAS_BASE_WIDTH,
+  FOCUSABLE_ELEMENT,
   ONE_TIME_PASSIVE_EVENT,
   TASKBAR_HEIGHT,
 } from "utils/constants";
@@ -21,10 +24,7 @@ const ClockSourceMap = {
 
 const EASTER_EGG_CLICK_COUNT = 7;
 
-const clockSize: Size = {
-  height: TASKBAR_HEIGHT,
-  width: BASE_CLOCK_WIDTH,
-};
+const LARGEST_CLOCK_TEXT = "44:44:44 AM";
 
 let triggerEasterEggCountdown = EASTER_EGG_CLICK_COUNT;
 
@@ -39,29 +39,38 @@ const easterEggOnClick: React.MouseEventHandler<HTMLElement> = async ({
     triggerEasterEggCountdown === EASTER_EGG_CLICK_COUNT &&
     target instanceof HTMLElement
   ) {
-    target.setAttribute("tabIndex", "-1");
-
-    ["blur", "mouseleave"].forEach((type) => {
-      target.removeEventListener(type, resetEasterEggCountdown);
-      target.addEventListener(
-        type,
-        resetEasterEggCountdown,
-        ONE_TIME_PASSIVE_EVENT
-      );
-    });
+    target.removeEventListener("mouseleave", resetEasterEggCountdown);
+    target.addEventListener(
+      "mouseleave",
+      resetEasterEggCountdown,
+      ONE_TIME_PASSIVE_EVENT
+    );
   }
 
   triggerEasterEggCountdown -= 1;
 
   if (triggerEasterEggCountdown === 0) {
-    const { default: spawnSheep } = await import("utils/spawnSheep");
+    const { spawnSheep } = await import("utils/spawnSheep");
 
     spawnSheep();
+
     triggerEasterEggCountdown = EASTER_EGG_CLICK_COUNT;
   }
 };
 
-const Clock: FC = () => {
+type ClockProps = {
+  hasAI: boolean;
+  setClockWidth: React.Dispatch<React.SetStateAction<number>>;
+  toggleCalendar: () => void;
+  width: number;
+};
+
+const Clock: FC<ClockProps> = ({
+  hasAI,
+  setClockWidth,
+  toggleCalendar,
+  width,
+}) => {
   const [now, setNow] = useState<LocaleTimeDate>(
     Object.create(null) as LocaleTimeDate
   );
@@ -78,7 +87,7 @@ const Clock: FC = () => {
       ),
     [clockSource]
   );
-  const offScreenClockCanvas = useRef<OffscreenCanvas>();
+  const offScreenClockCanvas = useRef<OffscreenCanvas>(undefined);
   const supportsOffscreenCanvas = useMemo(
     () => typeof window !== "undefined" && "OffscreenCanvas" in window,
     []
@@ -97,10 +106,31 @@ const Clock: FC = () => {
     },
     [clockSource]
   );
-  const clockContextMenu = useClockContextMenu();
+  const clockContextMenu = useClockContextMenu(toggleCalendar);
   const currentWorker = useWorker<ClockWorkerResponse>(
     clockWorkerInit,
     updateTime
+  );
+  const clockSize = useRef<Size>({
+    height: TASKBAR_HEIGHT,
+    width,
+  });
+  const {
+    formats: { systemFont },
+    sizes: {
+      clock: { fontSize },
+    },
+  } = useTheme();
+  const getMeasuredWidth = useCallback(
+    () =>
+      Math.min(
+        Math.max(
+          CLOCK_CANVAS_BASE_WIDTH,
+          Math.ceil(measureText(LARGEST_CLOCK_TEXT, fontSize, systemFont))
+        ),
+        CLOCK_CANVAS_BASE_WIDTH * 1.5
+      ),
+    [fontSize, systemFont]
   );
   const clockCallbackRef = useCallback(
     (clockContainer: HTMLDivElement | null) => {
@@ -111,10 +141,13 @@ const Clock: FC = () => {
       ) {
         [...clockContainer.children].forEach((element) => element.remove());
 
+        clockSize.current.width = getMeasuredWidth();
+        setClockWidth(clockSize.current.width);
+
         offScreenClockCanvas.current = createOffscreenCanvas(
           clockContainer,
           window.devicePixelRatio,
-          clockSize
+          clockSize.current
         );
 
         currentWorker.current.postMessage(
@@ -130,9 +163,17 @@ const Clock: FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [currentWorker, now]
   );
+  const onClockClick = useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      easterEggOnClick(event);
+      toggleCalendar();
+    },
+    [toggleCalendar]
+  );
 
   useEffect(() => {
     offScreenClockCanvas.current = undefined;
+    // eslint-disable-next-line react-hooks-addons/no-unused-deps
   }, [clockSource]);
 
   useEffect(() => {
@@ -144,7 +185,7 @@ const Clock: FC = () => {
             "change",
             () => {
               currentWorker.current?.postMessage({
-                clockSize,
+                clockSize: clockSize.current,
                 devicePixelRatio: window.devicePixelRatio,
               });
               monitorPixelRatio();
@@ -153,8 +194,8 @@ const Clock: FC = () => {
           );
 
       monitorPixelRatio();
-    }
-  }, [currentWorker, supportsOffscreenCanvas]);
+    } else setClockWidth(getMeasuredWidth());
+  }, [currentWorker, getMeasuredWidth, setClockWidth, supportsOffscreenCanvas]);
 
   // eslint-disable-next-line unicorn/no-null
   if (!time) return null;
@@ -162,16 +203,19 @@ const Clock: FC = () => {
   return (
     <StyledClock
       ref={supportsOffscreenCanvas ? clockCallbackRef : undefined}
+      $hasAI={hasAI}
+      $width={width}
       aria-label="Clock"
-      onClick={easterEggOnClick}
+      onClick={onClockClick}
       role="timer"
       title={date}
       suppressHydrationWarning
       {...clockContextMenu}
+      {...FOCUSABLE_ELEMENT}
     >
       {supportsOffscreenCanvas ? undefined : time}
     </StyledClock>
   );
 };
 
-export default Clock;
+export default memo(Clock);

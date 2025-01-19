@@ -1,34 +1,43 @@
-import extensions, {
-  TEXT_EDITORS,
-} from "components/system/Files/FileEntry/extensions";
-import { getProcessByFileExtension } from "components/system/Files/FileEntry/functions";
+import { basename, dirname, extname, join } from "path";
+import { type URLTrack } from "webamp";
+import { useMemo } from "react";
+import { type FileStat } from "components/system/Files/FileManager/functions";
+import { EXTRACTABLE_EXTENSIONS } from "components/system/Files/FileEntry/constants";
+import extensions from "components/system/Files/FileEntry/extensions";
+import {
+  getProcessByFileExtension,
+  isExistingFile,
+} from "components/system/Files/FileEntry/functions";
 import useFile from "components/system/Files/FileEntry/useFile";
-import type { FocusEntryFunctions } from "components/system/Files/FileManager/useFocusableEntries";
-import type { FileActions } from "components/system/Files/FileManager/useFolder";
+import { type FocusEntryFunctions } from "components/system/Files/FileManager/useFocusableEntries";
+import { type FileActions } from "components/system/Files/FileManager/useFolder";
 import { useFileSystem } from "contexts/fileSystem";
+import { isMountedFolder } from "contexts/fileSystem/functions";
 import { useMenu } from "contexts/menu";
-import type {
-  ContextMenuCapture,
-  MenuItem,
+import {
+  type ContextMenuCapture,
+  type MenuItem,
 } from "contexts/menu/useMenuContextState";
 import { useProcesses } from "contexts/process";
 import processDirectory from "contexts/process/directory";
 import { useSession } from "contexts/session";
-import { basename, dirname, extname, join } from "path";
-import { useMemo } from "react";
+import { useProcessesRef } from "hooks/useProcessesRef";
 import {
   AUDIO_PLAYLIST_EXTENSIONS,
+  CURSOR_FILE_EXTENSIONS,
   DESKTOP_PATH,
   EDITABLE_IMAGE_FILE_EXTENSIONS,
-  EXTRACTABLE_EXTENSIONS,
   IMAGE_FILE_EXTENSIONS,
-  isFileSystemSupported,
   MENU_SEPERATOR,
   MOUNTABLE_EXTENSIONS,
+  PACKAGE_DATA,
+  PROCESS_DELIMITER,
   ROOT_SHORTCUT,
   SHORTCUT_EXTENSION,
   SPREADSHEET_FORMATS,
-  UNSUPPORTED_BACKGROUND_EXTENSIONS,
+  SUMMARIZABLE_FILE_EXTENSIONS,
+  TEXT_EDITORS,
+  VIDEO_FILE_EXTENSIONS,
 } from "utils/constants";
 import {
   AUDIO_DECODE_FORMATS,
@@ -36,13 +45,22 @@ import {
   VIDEO_DECODE_FORMATS,
   VIDEO_ENCODE_FORMATS,
 } from "utils/ffmpeg/formats";
-import type { FFmpegTranscodeFile } from "utils/ffmpeg/types";
+import { type FFmpegTranscodeFile } from "utils/ffmpeg/types";
+import { getExtension, isSafari, isYouTubeUrl } from "utils/functions";
 import {
   IMAGE_DECODE_FORMATS,
   IMAGE_ENCODE_FORMATS,
 } from "utils/imagemagick/formats";
-import type { ImageMagickConvertFile } from "utils/imagemagick/types";
-import type { URLTrack } from "webamp";
+import { type ImageMagickConvertFile } from "utils/imagemagick/types";
+import { Share } from "components/system/Menu/MenuIcons";
+import { useWindowAI } from "hooks/useWindowAI";
+import { getNavButtonByTitle } from "hooks/useGlobalKeyboardShortcuts";
+import {
+  AI_DISPLAY_TITLE,
+  AI_STAGE,
+} from "components/system/Taskbar/AI/constants";
+
+const { alias } = PACKAGE_DATA;
 
 const useFileContextMenu = (
   url: string,
@@ -58,14 +76,22 @@ const useFileContextMenu = (
   }: FileActions,
   { blurEntry, focusEntry }: FocusEntryFunctions,
   focusedEntries: string[],
+  stats: FileStat,
   fileManagerId?: string,
   readOnly?: boolean
 ): ContextMenuCapture => {
-  const { open, url: changeUrl } = useProcesses();
-  const { setWallpaper } = useSession();
+  const { minimize, open, url: changeUrl } = useProcesses();
+  const processesRef = useProcessesRef();
+  const {
+    aiEnabled,
+    setCursor,
+    setForegroundId,
+    setWallpaper,
+    updateRecentFiles,
+  } = useSession();
   const baseName = basename(path);
   const isFocusedEntry = focusedEntries.includes(baseName);
-  const openFile = useFile(url);
+  const openFile = useFile(url, path);
   const {
     copyEntries,
     createPath,
@@ -78,18 +104,20 @@ const useFileContextMenu = (
     updateFolder,
   } = useFileSystem();
   const { contextMenu } = useMenu();
+  const hasWindowAI = useWindowAI();
   const { onContextMenuCapture, ...contextMenuHandlers } = useMemo(
     () =>
       contextMenu?.(() => {
-        const urlExtension = extname(url).toLowerCase();
+        const urlExtension = getExtension(url);
         const { process: extensionProcesses = [] } =
           urlExtension in extensions ? extensions[urlExtension] : {};
         const openWith = extensionProcesses.filter(
           (process) => process !== pid
         );
         const openWithFiltered = openWith.filter((id) => id !== pid);
+        const isSingleSelection = focusedEntries.length === 1;
         const absoluteEntries = (): string[] =>
-          focusedEntries.length === 1 || !isFocusedEntry
+          isSingleSelection || !isFocusedEntry
             ? [path]
             : [
                 ...new Set([
@@ -98,12 +126,11 @@ const useFileContextMenu = (
                 ]),
               ];
         const menuItems: MenuItem[] = [];
-        const pathExtension = extname(path).toLowerCase();
+        const pathExtension = getExtension(path);
         const isShortcut = pathExtension === SHORTCUT_EXTENSION;
         const remoteMount = rootFs?.mountList.some(
           (mountPath) =>
-            mountPath === path &&
-            rootFs?.mntMap[mountPath]?.getName() === "FileSystemAccess"
+            mountPath === path && isMountedFolder(rootFs?.mntMap[mountPath])
         );
 
         if (!readOnly && !remoteMount) {
@@ -140,12 +167,34 @@ const useFileContextMenu = (
                 absoluteEntries().forEach((entry) => deleteLocalPath(entry)),
               label: "Delete",
             },
-            { action: () => setRenaming(baseName), label: "Rename" }
+            { action: () => setRenaming(baseName), label: "Rename" },
+            MENU_SEPERATOR,
+            {
+              action: () => {
+                const activePid = Object.keys(processesRef.current).find(
+                  (p) => p === `Properties${PROCESS_DELIMITER}${url}`
+                );
+
+                if (activePid) {
+                  if (processesRef.current[activePid].minimized) {
+                    minimize(activePid);
+                  }
+
+                  setForegroundId(activePid);
+                } else {
+                  open("Properties", {
+                    shortcutPath: isShortcut ? path : undefined,
+                    url: isShortcut ? path : url,
+                  });
+                }
+              },
+              label: "Properties",
+            }
           );
 
           if (path) {
             if (path === join(DESKTOP_PATH, ROOT_SHORTCUT)) {
-              if (isFileSystemSupported()) {
+              if (typeof FileSystemHandle === "function") {
                 const mapFileSystemDirectory = (
                   directory: string,
                   existingHandle?: FileSystemDirectoryHandle
@@ -161,39 +210,42 @@ const useFileContextMenu = (
                       // Ignore failure to map
                     });
                 };
+                const showMapDirectory = "showDirectoryPicker" in window;
+                const showMapOpfs =
+                  typeof navigator.storage?.getDirectory === "function" &&
+                  !isSafari();
 
                 menuItems.unshift(
-                  {
-                    action: () => mapFileSystemDirectory("/"),
-                    label: "Map directory",
-                  },
-                  ...(navigator.storage?.getDirectory
+                  ...(showMapDirectory
                     ? [
                         {
-                          action: async () =>
-                            mapFileSystemDirectory(
-                              "/OPFS",
-                              await navigator.storage.getDirectory()
-                            ),
+                          action: () => mapFileSystemDirectory("/"),
+                          label: "Map directory",
+                        },
+                      ]
+                    : []),
+                  ...(showMapOpfs
+                    ? [
+                        {
+                          action: async () => {
+                            try {
+                              mapFileSystemDirectory(
+                                "/OPFS",
+                                await navigator.storage.getDirectory()
+                              );
+                            } catch {
+                              // Ignore failure to map directory
+                            }
+                          },
                           label: "Map OPFS",
                         },
                       ]
                     : []),
-                  MENU_SEPERATOR
+                  ...(showMapDirectory || showMapOpfs ? [MENU_SEPERATOR] : [])
                 );
               }
             } else {
               menuItems.unshift(MENU_SEPERATOR);
-
-              if (
-                EXTRACTABLE_EXTENSIONS.has(pathExtension) ||
-                MOUNTABLE_EXTENSIONS.has(pathExtension)
-              ) {
-                menuItems.unshift({
-                  action: () => extractFiles(path),
-                  label: "Extract Here",
-                });
-              }
 
               const canDecodeAudio = AUDIO_DECODE_FORMATS.has(pathExtension);
               const canDecodeImage = IMAGE_DECODE_FORMATS.has(pathExtension);
@@ -323,7 +375,7 @@ const useFileContextMenu = (
                       const playlist = createM3uPlaylist(
                         (await tracksFromPlaylist(
                           (await readFile(absoluteEntry)).toString(),
-                          extname(absoluteEntry)
+                          getExtension(absoluteEntry)
                         )) as URLTrack[]
                       );
                       const playlistDirName = dirname(path);
@@ -342,18 +394,64 @@ const useFileContextMenu = (
                 });
               }
 
+              const opensInFileExplorer = pid === "FileExplorer";
+
+              if (
+                isSingleSelection &&
+                !opensInFileExplorer &&
+                !isYouTubeUrl(url)
+              ) {
+                const baseFileName = basename(url);
+                const shareData: ShareData = {
+                  text: `${baseFileName} - ${alias}`,
+                  title: baseFileName,
+                  url: `${window.location.origin}?url=${url}`,
+                };
+
+                try {
+                  const isFileMounted = rootFs?.mountList.some(
+                    (mountPath) =>
+                      mountPath !== "/" && path.startsWith(`${mountPath}/`)
+                  );
+
+                  if (
+                    !isFileMounted &&
+                    isExistingFile(stats) &&
+                    navigator.canShare?.(shareData)
+                  ) {
+                    menuItems.unshift({
+                      SvgIcon: Share,
+                      action: () => navigator.share(shareData),
+                      label: "Share",
+                    });
+                  }
+                } catch {
+                  // Ignore failure to use Share API
+                }
+              }
+
               menuItems.unshift(
                 {
                   action: () => archiveFiles(absoluteEntries()),
                   label: "Add to archive...",
                 },
+                ...(EXTRACTABLE_EXTENSIONS.has(urlExtension) ||
+                MOUNTABLE_EXTENSIONS.has(urlExtension)
+                  ? [
+                      {
+                        action: () => extractFiles(url),
+                        label: "Extract Here",
+                      },
+                      MENU_SEPERATOR,
+                    ]
+                  : []),
                 {
                   action: () => downloadFiles(absoluteEntries()),
                   label: "Download",
                 }
               );
 
-              if (!isShortcut && pid !== "FileExplorer") {
+              if (!isShortcut && !opensInFileExplorer) {
                 TEXT_EDITORS.forEach((textEditor) => {
                   if (
                     textEditor !== defaultProcess &&
@@ -371,7 +469,11 @@ const useFileContextMenu = (
 
         if (remoteMount) {
           menuItems.push(MENU_SEPERATOR, {
-            action: () => unMapFs(path),
+            action: () =>
+              unMapFs(
+                path,
+                rootFs?.mntMap[path].getName() !== "FileSystemAccess"
+              ),
             label: "Disconnect",
           });
         }
@@ -380,53 +482,113 @@ const useFileContextMenu = (
           menuItems.unshift({
             action: () => {
               open("Paint", { url });
+              if (url) updateRecentFiles(url, "Paint");
             },
             label: "Edit",
           });
         }
 
+        if (CURSOR_FILE_EXTENSIONS.has(urlExtension)) {
+          menuItems.unshift({
+            action: () => setCursor(url),
+            label: "Set as mouse pointer",
+          });
+        }
+
         if (
-          IMAGE_FILE_EXTENSIONS.has(pathExtension) &&
-          !UNSUPPORTED_BACKGROUND_EXTENSIONS.has(pathExtension)
+          (aiEnabled || (hasWindowAI && "summarizer" in window.ai)) &&
+          SUMMARIZABLE_FILE_EXTENSIONS.has(urlExtension)
+        ) {
+          const aiCommand = (command: string): void => {
+            window.initialAiPrompt = `${command}: ${url}`;
+
+            const newTopicButton = document.querySelector<HTMLButtonElement>(
+              "main > section > footer > button.new-topic"
+            );
+
+            if (newTopicButton) {
+              newTopicButton?.click();
+            } else {
+              getNavButtonByTitle(AI_DISPLAY_TITLE)?.click();
+            }
+          };
+
+          menuItems.unshift(MENU_SEPERATOR, {
+            label: `AI (${AI_STAGE})`,
+            menu: [
+              ...(aiEnabled || (hasWindowAI && "summarizer" in window.ai)
+                ? [
+                    {
+                      action: () => aiCommand("Summarize"),
+                      label: "Summarize Text",
+                    },
+                  ]
+                : []),
+            ],
+          });
+        }
+
+        const hasBackgroundVideoExtension =
+          VIDEO_FILE_EXTENSIONS.has(urlExtension);
+
+        if (
+          hasBackgroundVideoExtension ||
+          (IMAGE_FILE_EXTENSIONS.has(urlExtension) &&
+            !CURSOR_FILE_EXTENSIONS.has(urlExtension) &&
+            urlExtension !== ".svg")
         ) {
           menuItems.unshift({
-            label: "Set as desktop background",
-            menu: [
-              {
-                action: () => setWallpaper(path, "fill"),
-                label: "Fill",
-              },
-              {
-                action: () => setWallpaper(path, "fit"),
-                label: "Fit",
-              },
-              {
-                action: () => setWallpaper(path, "stretch"),
-                label: "Stretch",
-              },
-              {
-                action: () => setWallpaper(path, "tile"),
-                label: "Tile",
-              },
-              {
-                action: () => setWallpaper(path, "center"),
-                label: "Center",
-              },
-            ],
+            label: "Set as background",
+            ...(hasBackgroundVideoExtension
+              ? {
+                  action: () => setWallpaper(url),
+                }
+              : {
+                  menu: [
+                    {
+                      action: () => setWallpaper(url, "fill"),
+                      label: "Fill",
+                    },
+                    {
+                      action: () => setWallpaper(url, "fit"),
+                      label: "Fit",
+                    },
+                    {
+                      action: () => setWallpaper(url, "stretch"),
+                      label: "Stretch",
+                    },
+                    {
+                      action: () => setWallpaper(url, "tile"),
+                      label: "Tile",
+                    },
+                    {
+                      action: () => setWallpaper(url, "center"),
+                      label: "Center",
+                    },
+                  ],
+                }),
           });
         }
 
         if (openWithFiltered.length > 0) {
           menuItems.unshift({
             label: "Open with",
-            menu: openWithFiltered.map((id): MenuItem => {
-              const { icon, title: label } = processDirectory[id] || {};
-              const action = (): void => {
-                openFile(id, icon);
-              };
+            menu: [
+              ...openWithFiltered.map((id): MenuItem => {
+                const { icon, title: label } = processDirectory[id] || {};
+                const action = (): void => {
+                  openFile(id, icon);
+                };
 
-              return { action, icon, label };
-            }),
+                return { action, icon, label };
+              }),
+              MENU_SEPERATOR,
+              {
+                action: () => open("OpenWith", { url }),
+                label: "Choose another app",
+              },
+            ],
+            primary: !pid,
           });
         }
 
@@ -438,7 +600,8 @@ const useFileContextMenu = (
             url &&
             url !== "/" &&
             !url.startsWith("http:") &&
-            !url.startsWith("https:")
+            !url.startsWith("https:") &&
+            !url.startsWith("nostr:")
           ) {
             const isFolder = urlExtension === "" || urlExtension === ".zip";
 
@@ -479,9 +642,10 @@ const useFileContextMenu = (
           });
         }
 
-        return menuItems;
+        return menuItems[0] === MENU_SEPERATOR ? menuItems.slice(1) : menuItems;
       }),
     [
+      aiEnabled,
       archiveFiles,
       baseName,
       changeUrl,
@@ -493,23 +657,30 @@ const useFileContextMenu = (
       extractFiles,
       fileManagerId,
       focusedEntries,
+      hasWindowAI,
       isFocusedEntry,
       lstat,
       mapFs,
+      minimize,
       moveEntries,
       newShortcut,
       open,
       openFile,
       path,
       pid,
+      processesRef,
       readFile,
       readOnly,
       rootFs?.mntMap,
       rootFs?.mountList,
+      setCursor,
+      setForegroundId,
       setRenaming,
       setWallpaper,
+      stats,
       unMapFs,
       updateFolder,
+      updateRecentFiles,
       url,
     ]
   );

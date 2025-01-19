@@ -1,25 +1,25 @@
+import { extname } from "path";
 import { colorAttributes, rgbAnsi } from "components/apps/Terminal/color";
 import { commands as gitCommands } from "components/apps/Terminal/processGit";
-import type { LocalEcho } from "components/apps/Terminal/types";
+import { type LocalEcho } from "components/apps/Terminal/types";
+import { resourceAliasMap } from "components/system/Dialogs/Run";
 import processDirectory from "contexts/process/directory";
 import { ONE_DAY_IN_MILLISECONDS } from "utils/constants";
 
 export const help = (
-  localEcho: LocalEcho,
+  printLn: (message: string) => void,
   commandList: Record<string, string>,
   aliasList?: Record<string, string[]>
 ): void => {
   Object.entries(commandList).forEach(([command, description]) => {
-    localEcho?.println(`${command.padEnd(14)} ${description}`);
+    printLn(`${command.padEnd(14)} ${description}`);
   });
 
   if (aliasList) {
-    localEcho?.println("\r\nAliases:\r\n");
+    printLn("\r\nAliases:\r\n");
     Object.entries(aliasList).forEach(([baseCommand, aliasCommands]) => {
       aliasCommands.forEach((aliasCommand) => {
-        localEcho?.println(
-          `${aliasCommand.padEnd(14)} ${commandList[baseCommand]}`
-        );
+        printLn(`${aliasCommand.padEnd(14)} ${commandList[baseCommand]}`);
       });
     });
   }
@@ -45,15 +45,18 @@ export const commands: Record<string, string> = {
   ipconfig: "Displays current IP.",
   license: "Displays license.",
   md: "Creates a directory.",
+  mediainfo: "Displays relevant technical data about media files.",
   mount: "Mounts a local file system directory.",
   move: "Moves file or directory.",
   neofetch: "Displays system information.",
+  nslookup: "Displays DNS information about a domain.",
   pwd: "Prints the working directory.",
   python: "Run code through Python interpreter.",
+  qjs: "Run code through QuickJS interpreter.",
   rd: "Removes a directory.",
   ren: "Renames a file or directory.",
   rm: "Removes a file or directory.",
-  sheep: "Spawn a new sheep",
+  sheep: "Spawn a new sheep.",
   shutdown: "Allows proper local shutdown of machine.",
   taskkill: "Kill or stop a running process or application.",
   tasklist: "Displays all currently running processes.",
@@ -64,8 +67,9 @@ export const commands: Record<string, string> = {
   uptime: "Display the current uptime of the local system.",
   ver: "Displays the system version.",
   wapm: "Run universal Wasm binaries.",
-  weather: "Weather forecast service",
+  weather: "Weather forecast service.",
   whoami: "Displays user information.",
+  wsl: "Launches the default Linux shell.",
   xlsx: "Convert a spreadsheet file to another format.",
 };
 
@@ -82,7 +86,8 @@ export const aliases: Record<string, string[]> = {
   md: ["mkdir"],
   move: ["mv"],
   neofetch: ["systeminfo"],
-  python: ["py"],
+  python: ["py", "python3"],
+  qjs: ["node", "quickjs"],
   rd: ["rmdir"],
   ren: ["rename"],
   sheep: ["esheep"],
@@ -91,8 +96,9 @@ export const aliases: Record<string, string[]> = {
   tasklist: ["ps"],
   type: ["cat"],
   ver: ["version"],
-  wapm: ["wax"],
+  wapm: ["wasmer", "wax"],
   weather: ["wttr"],
+  wsl: ["linux"],
 };
 
 const directoryCommands = new Set([
@@ -109,9 +115,16 @@ const directoryCommands = new Set([
   "imagemagick",
   "ls",
   "md",
+  "mediainfo",
   "mkdir",
   "move",
   "mv",
+  "node",
+  "py",
+  "python",
+  "python3",
+  "qjs",
+  "quickjs",
   "rd",
   "ren",
   "rename",
@@ -119,7 +132,9 @@ const directoryCommands = new Set([
   "rmdir",
   "touch",
   "type",
-  "vim",
+  "wapm",
+  "wasmer",
+  "wax",
   "xlsx",
 ]);
 
@@ -144,35 +159,49 @@ export const autoComplete = (
       if (lowerCommand === "git") return Object.keys(gitCommands);
       if (directoryCommands.has(lowerCommand)) return directory;
 
-      const lowerProcesses = Object.keys(processDirectory).map((pid) =>
-        pid.toLowerCase()
-      );
+      const lowerProcesses = Object.entries(processDirectory)
+        .filter(([, { dialogProcess }]) => !dialogProcess)
+        .map(([pid]) => pid.toLowerCase());
 
-      if (lowerProcesses.includes(lowerCommand)) return directory;
+      if (
+        lowerProcesses.includes(lowerCommand) ||
+        Object.keys(resourceAliasMap).includes(lowerCommand)
+      ) {
+        return directory;
+      }
     }
 
     return [];
   });
 };
 
-export const parseCommand = (commandString: string): string[] => {
+export const parseCommand = (
+  commandString: string,
+  pipedCommand = ""
+): string[] => {
   let readingQuotedArg = false;
   let currentArg = "";
   const addArg = (acc: string[]): void => {
-    if (currentArg) acc.push(currentArg);
+    acc.push(currentArg);
     currentArg = "";
   };
-  const parsedCommand = [...commandString].reduce<string[]>((acc, char) => {
-    if (char === " " && !readingQuotedArg) addArg(acc);
-    else if (char === '"') {
-      readingQuotedArg = !readingQuotedArg;
-      if (!readingQuotedArg) addArg(acc);
-    } else {
-      currentArg += char;
-    }
+  const parsedCommand = [...commandString].reduce<string[]>(
+    (acc, char, index) => {
+      if (pipedCommand && index > pipedCommand.length) {
+        currentArg += char;
+      } else if (char === " " && !readingQuotedArg && currentArg) {
+        addArg(acc);
+      } else if (char === '"') {
+        readingQuotedArg = !readingQuotedArg;
+        if (!readingQuotedArg) addArg(acc);
+      } else {
+        currentArg += char;
+      }
 
-    return acc;
-  }, []);
+      return acc;
+    },
+    []
+  );
 
   return currentArg ? [...parsedCommand, currentArg] : parsedCommand;
 };
@@ -180,7 +209,7 @@ export const parseCommand = (commandString: string): string[] => {
 export const printTable = (
   headers: [string, number, boolean?, ((value: string) => string)?][],
   data: string[][],
-  localEcho?: LocalEcho,
+  printLn: (message: string) => void,
   hideHeader?: boolean,
   paddingCharacter = "="
 ): void => {
@@ -192,8 +221,8 @@ export const printTable = (
       .map(([, padding]) => paddingCharacter.repeat(padding))
       .join(" ");
 
-    localEcho?.println(header);
-    localEcho?.println(divider);
+    printLn(header);
+    printLn(divider);
   }
 
   const content = data.map((row) =>
@@ -212,7 +241,7 @@ export const printTable = (
       .join(" ")
   );
 
-  if (content.length > 0) content.forEach((entry) => localEcho?.println(entry));
+  if (content.length > 0) content.forEach((entry) => printLn(entry));
 };
 
 export const getFreeSpace = async (): Promise<string> => {
@@ -241,9 +270,7 @@ export const getUptime = (isShort = false): string => {
       ...(mins
         ? [`${mins} ${isShort ? "min" : "minute"}${mins === 1 ? "" : "s"}`]
         : []),
-      ...(secs
-        ? [`${secs} ${isShort ? "sec" : "second"}${secs === 1 ? "" : "s"}`]
-        : []),
+      `${secs} ${isShort ? "sec" : "second"}${secs === 1 ? "" : "s"}`,
     ].join(", ");
   }
 
@@ -261,4 +288,27 @@ export const printColor = (
     `${rgbAnsi(...colorAttributes[0].rgb, true)}${rgbAnsi(
       ...colorAttributes[7].rgb
     )}`
-  }`;
+  }\u001B[0m`;
+
+export const clearAnsiBackground = (text: string): string =>
+  text.replace(/;48;2;/g, ";48;0;").replace(/;48;5;/g, ";48;0;");
+
+export const readClipboardToTerminal = (localEcho: LocalEcho): void => {
+  try {
+    navigator.clipboard
+      ?.readText?.()
+      .then((clipboardText) => localEcho.handleCursorInsert(clipboardText));
+  } catch {
+    // Ignore failure to read clipboard
+  }
+};
+
+export const formatToExtension = (format: string): string => {
+  const extension = format.toLowerCase().trim();
+
+  return extension.startsWith(".")
+    ? extension.slice(1)
+    : extension.includes(".")
+      ? extname(extension).slice(1)
+      : extension;
+};

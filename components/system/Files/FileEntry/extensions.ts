@@ -1,5 +1,5 @@
 import { emulatorCores } from "components/apps/Emulator/config";
-import { EDITABLE_IMAGE_FILE_EXTENSIONS } from "utils/constants";
+import { EDITABLE_IMAGE_FILE_EXTENSIONS, TEXT_EDITORS } from "utils/constants";
 
 type Extension = {
   command?: string;
@@ -7,8 +7,6 @@ type Extension = {
   process: string[];
   type?: string;
 };
-
-export const TEXT_EDITORS = ["MonacoEditor", "Vim"];
 
 const types = {
   Application: {
@@ -69,7 +67,7 @@ const types = {
   },
   Music: {
     icon: "audio",
-    process: ["Webamp"],
+    process: ["Webamp", "VideoPlayer"],
   },
   PdfDocument: {
     icon: "pdf",
@@ -89,6 +87,16 @@ const types = {
   SvgFile: {
     process: ["Photos", ...TEXT_EDITORS],
     type: "Scalable Vector Graphics File",
+  },
+  Tic80: {
+    process: ["Tic80"],
+    type: "TIC-80 Cartridge",
+  },
+  WasmFile: {
+    command: "wapm",
+    icon: "wapm",
+    process: ["Terminal"],
+    type: "WebAssembly Module File",
   },
   WinampSkin: {
     icon: "audio",
@@ -110,6 +118,7 @@ const types = {
 const extensions: Record<string, Extension> = {
   ".asx": types.AudioPlaylist,
   ".bin": types.DiscImage,
+  ".dsk": types.DiscImage,
   ".exe": types.Application,
   ".htm": types.HtmlDocument,
   ".html": types.HtmlDocument,
@@ -128,7 +137,9 @@ const extensions: Record<string, Extension> = {
   ".spl": types.FutureSplash,
   ".svg": types.SvgFile,
   ".swf": types.ShockwaveFlash,
+  ".tic": types.Tic80,
   ".ttf": types.Font,
+  ".wasm": types.WasmFile,
   ".whtml": types.WysiwygHtmlDocument,
   ".woff": types.Font,
   ".wsz": types.WinampSkin,

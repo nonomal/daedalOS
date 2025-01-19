@@ -1,15 +1,15 @@
-import { isWindowOutsideBounds } from "components/system/Window/functions";
+import { type Props, type RndResizeCallback } from "react-rnd";
+import { type DraggableEventHandler } from "react-draggable";
+import { useCallback, useMemo } from "react";
 import rndDefaults, {
   RESIZING_DISABLED,
   RESIZING_ENABLED,
 } from "components/system/Window/RndWindow/rndDefaults";
 import useDraggable from "components/system/Window/RndWindow/useDraggable";
 import useResizable from "components/system/Window/RndWindow/useResizable";
+import { isWindowOutsideBounds } from "components/system/Window/functions";
 import { useProcesses } from "contexts/process";
 import { useSession } from "contexts/session";
-import { useCallback, useMemo } from "react";
-import type { DraggableEventHandler } from "react-draggable";
-import type { Props, RndResizeCallback } from "react-rnd";
 import { getWindowViewport, pxToNum } from "utils/functions";
 
 const enableIframeCapture = (enable = true): void =>
@@ -58,10 +58,28 @@ const useRnd = (id: string): Props => {
     [id, setPosition, setWindowStates, size]
   );
   const onResizeStop: RndResizeCallback = useCallback(
-    (_event, _direction, { style: { height, width } }, _delta, newPositon) => {
+    (
+      _event,
+      _direction,
+      { style: { height, width, transform } },
+      _delta,
+      resizePosition
+    ) => {
+      const [, x, y] =
+        /translate\((-?\d+)px, (-?\d+)px\)/.exec(transform) || [];
+      const newPositon =
+        typeof x === "string" && typeof y === "string"
+          ? { x: pxToNum(x), y: pxToNum(y) }
+          : resizePosition;
+
       enableIframeCapture();
 
       const newSize = { height: pxToNum(height), width: pxToNum(width) };
+
+      if (newPositon.y < 0) {
+        newSize.height += newPositon.y;
+        newPositon.y = 0;
+      }
 
       setSize(newSize);
       setPosition(newPositon);

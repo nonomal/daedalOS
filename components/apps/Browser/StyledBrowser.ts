@@ -1,9 +1,14 @@
 import styled from "styled-components";
 
-const StyledBrowser = styled.div`
+type StyledBrowserProps = {
+  $hasSrcDoc: boolean;
+};
+
+const StyledBrowser = styled.div<StyledBrowserProps>`
   iframe {
+    background-color: ${({ $hasSrcDoc }) => ($hasSrcDoc ? "#fff" : "initial")};
     border: 0;
-    height: calc(100% - 36px - 33px);
+    height: calc(100% - 42px - 37px);
     width: 100%;
   }
 
@@ -17,9 +22,10 @@ const StyledBrowser = styled.div`
     div {
       display: flex;
       justify-content: space-around;
+      margin-right: 2px;
       min-width: 102px;
-      padding-left: 6px;
-      width: 102px;
+      padding-left: 4px;
+      width: 142px;
     }
 
     button {
@@ -33,8 +39,18 @@ const StyledBrowser = styled.div`
 
       svg {
         fill: rgb(240, 240, 240);
-        height: 22px;
-        width: 22px;
+        height: 20px;
+        width: 20px;
+      }
+
+      &.proxy {
+        margin: 0 10px 0 4px;
+        width: 40px;
+
+        svg {
+          height: 15px;
+          width: 15px;
+        }
       }
 
       &:hover {
@@ -56,13 +72,13 @@ const StyledBrowser = styled.div`
 
     &:not(:first-child) {
       border-bottom: 1px solid rgb(118, 115, 118);
-      height: 33px;
+      height: 37px;
       justify-content: left;
       padding: 0 8px;
 
       button {
         margin-bottom: 4px;
-        margin-right: 4px;
+        margin-right: 8px;
       }
     }
 
@@ -72,15 +88,19 @@ const StyledBrowser = styled.div`
       color: rgb(255, 255, 255);
       font-family: ${({ theme }) => theme.formats.systemFont};
       font-size: 13px;
-      height: 28px;
+      height: 34px;
       letter-spacing: 0.2px;
-      line-height: 26px;
       margin: 0 6px;
       padding: 0 13px;
+      padding-bottom: 2px;
       width: 100%;
 
       &:focus {
-        outline: 2px solid rgb(138, 180, 248);
+        outline: 2px solid rgb(168, 199, 250);
+      }
+
+      &::selection {
+        background-color: rgb(0, 74, 119);
       }
     }
   }

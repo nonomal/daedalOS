@@ -28,21 +28,59 @@ const HTML_MINIFIER_CONFIG = {
   useShortDoctype: true,
 };
 
-let commit = process.env.npm_package_gitHead?.slice(0, 6);
+const getCommitHash = () => {
+  const COMMIT_HASH_LENGTH = 7;
+  let commit = "";
 
-if (!commit) {
   try {
-    commit = execSync("git rev-parse --short HEAD", { cwd: __dirname })
+    commit = execSync(`git rev-parse --short=${COMMIT_HASH_LENGTH} HEAD`, {
+      cwd: __dirname,
+    })
       .toString()
       .trim();
   } catch {
-    commit = new Date().toISOString().slice(0, 10);
+    // Ignore failure to get commit hash from git
   }
-}
+
+  if (!commit) {
+    commit =
+      process.env.npm_package_gitHead?.slice(0, COMMIT_HASH_LENGTH - 1) ||
+      new Date().toISOString().slice(0, 10);
+  }
+
+  return commit;
+};
+
+const getRepoUrl = () => {
+  let url = "";
+
+  try {
+    url = execSync("git config --get remote.origin.url", {
+      cwd: __dirname,
+    })
+      .toString()
+      .trim();
+
+    if (url.endsWith(".git")) {
+      url = url.slice(0, -4);
+    }
+  } catch {
+    // Ignore failure to get commit hash from git
+  }
+
+  return url;
+};
 
 const CODE_REPLACE_FUNCTIONS = [
   (html) => html.replace(/<noscript (.*)><\/noscript>/, ""),
-  (html) => html.replace(/><\/path>/, "/>"),
+  (html) => {
+    const [style] = html.match(/<style[\s\S]+>[\s\S]+<\/style>/);
+
+    return html.replace(
+      style,
+      style.replace(/(?:-ms-[^:;{}]+|[^:;{}]+:-ms-)[^;{}]+;/g, "")
+    );
+  },
   (html) =>
     html.replace(
       /<script defer src=\/_next\/static\/chunks\/polyfills-[a-zA-Z0-9-_]+.js nomodule=""><\/script>/,
@@ -50,23 +88,13 @@ const CODE_REPLACE_FUNCTIONS = [
     ),
   (html) =>
     html.replace(
-      /<script defer src=\/_next\/static\/[a-zA-Z0-9-_]+\/_buildManifest.js><\/script>/,
-      ""
-    ),
-  (html) =>
-    html.replace(
-      /<script defer src=\/_next\/static\/[a-zA-Z0-9-_]+\/_ssgManifest.js><\/script>/,
-      ""
-    ),
-  (html) =>
-    html.replace(
       /<script id=__NEXT_DATA__ type=application\/json>(.*)<\/script>/,
-      `<script id=__NEXT_DATA__ type=application/json>{"buildId":"${commit}","page":"/","props":{}}</script>`
+      `<script id=__NEXT_DATA__ type=application/json>{"buildId":"${getCommitHash() || Date.now()}","page":"/","props":{}}</script>`
     ),
 ];
 
 readdirSync(OUT_PATH).forEach(async (entry) => {
-  if (extname(entry) === ".html") {
+  if (extname(entry).toLowerCase() === ".html") {
     const fullPath = join(OUT_PATH, entry);
     const html = readFileSync(fullPath);
     let minifiedHtml = await minify(html.toString(), HTML_MINIFIER_CONFIG);
@@ -74,6 +102,12 @@ readdirSync(OUT_PATH).forEach(async (entry) => {
     CODE_REPLACE_FUNCTIONS.forEach((codeFunction) => {
       minifiedHtml = codeFunction(minifiedHtml);
     });
+
+    const repoUrl = getRepoUrl();
+
+    if (repoUrl) {
+      minifiedHtml = `<!-- ${repoUrl} -->\n${minifiedHtml}`;
+    }
 
     writeFileSync(fullPath, minifiedHtml);
   }

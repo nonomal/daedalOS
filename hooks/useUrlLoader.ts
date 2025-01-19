@@ -1,11 +1,14 @@
-import extensions from "components/system/Files/FileEntry/extensions";
-import { getDefaultFileViewer } from "components/system/Files/FileEntry/functions";
+import { useEffect, useRef } from "react";
+import { getProcessByFileExtension } from "components/system/Files/FileEntry/functions";
 import { useFileSystem } from "contexts/fileSystem";
 import { useProcesses } from "contexts/process";
 import processDirectory from "contexts/process/directory";
-import { extname } from "path";
-import { useEffect, useRef } from "react";
-import { getSearchParam } from "utils/functions";
+import { getExtension, getSearchParam } from "utils/functions";
+
+const isBrowserUrl = (url: string): boolean =>
+  url.startsWith("http://") ||
+  url.startsWith("https://") ||
+  url.startsWith("chrome://");
 
 const useUrlLoader = (): void => {
   const { exists, fs } = useFileSystem();
@@ -27,7 +30,7 @@ const useUrlLoader = (): void => {
 
       try {
         urlExists =
-          (initialApp === "Browser" && url.startsWith("http")) ||
+          (initialApp === "Browser" && isBrowserUrl(url)) ||
           (await exists(url));
       } catch {
         // Ignore error checking if url exists
@@ -40,18 +43,21 @@ const useUrlLoader = (): void => {
 
     if (app) {
       const lcAppNames = Object.fromEntries(
-        Object.keys(processDirectory).map((name) => [name.toLowerCase(), name])
+        Object.entries(processDirectory)
+          .filter(([, { dialogProcess }]) => !dialogProcess)
+          .map(([name]) => [name.toLowerCase(), name])
       );
 
       loadInitialApp(lcAppNames[app.toLowerCase()]);
     } else if (url) {
-      const extension = extname(url).toLowerCase();
-      const { process: [defaultApp] = [] } = extensions[extension] || {};
+      const extension = getExtension(url);
 
       loadInitialApp(
-        extension
-          ? defaultApp || getDefaultFileViewer(extension)
-          : "FileExplorer"
+        isBrowserUrl(url)
+          ? "Browser"
+          : extension
+            ? getProcessByFileExtension(extension)
+            : "FileExplorer"
       );
     }
   }, [exists, fs, open]);

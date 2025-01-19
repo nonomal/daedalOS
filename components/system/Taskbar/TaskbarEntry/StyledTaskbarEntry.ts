@@ -1,5 +1,6 @@
-import { m as motion } from "framer-motion";
+import { m as motion } from "motion/react";
 import styled from "styled-components";
+import Button from "styles/common/Button";
 
 type StyledTaskbarEntryProps = {
   $foreground: boolean;
@@ -27,10 +28,10 @@ const StyledTaskbarEntry = styled(motion.li)<StyledTaskbarEntryProps>`
         : ""};
     border-bottom: ${({ $progress, theme }) => `
         ${theme.sizes.taskbar.entry.borderSize} solid ${
-      $progress && $progress > 0 && $progress < 100
-        ? theme.colors.progress
-        : theme.colors.highlight
-    }
+          $progress && $progress > 0 && $progress < 100
+            ? theme.colors.progress
+            : theme.colors.highlight
+        }
       `};
     bottom: 0;
     content: "";
@@ -86,6 +87,15 @@ const StyledTaskbarEntry = styled(motion.li)<StyledTaskbarEntryProps>`
       position: relative;
       top: 1px;
       width: ${({ theme }) => theme.sizes.taskbar.entry.iconSize};
+    }
+  }
+
+  > ${Button} {
+    align-items: center;
+    display: flex;
+
+    figure {
+      width: 100%;
     }
   }
 `;

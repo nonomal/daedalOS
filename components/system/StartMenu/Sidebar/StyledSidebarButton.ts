@@ -1,5 +1,5 @@
-import StyledSidebar from "components/system/StartMenu/Sidebar/StyledSidebar";
 import styled from "styled-components";
+import StyledSidebar from "components/system/StartMenu/Sidebar/StyledSidebar";
 
 type StyledSidebarButtonProps = {
   $active?: boolean;
@@ -8,7 +8,7 @@ type StyledSidebarButtonProps = {
 const StyledSidebarButton = styled.li<StyledSidebarButtonProps>`
   border: 1px solid transparent;
   display: flex;
-  height: ${({ theme }) => theme.sizes.startMenu.sideBar.height};
+  height: ${({ theme }) => theme.sizes.startMenu.sideBar.buttonHeight}px;
   place-content: center;
   place-items: center;
   transition-duration: 150ms;
@@ -16,9 +16,9 @@ const StyledSidebarButton = styled.li<StyledSidebarButtonProps>`
 
   &::before {
     border-left: ${({ $active, theme }) =>
-      `4px solid ${$active ? theme.colors.highlight : "transparent"}`};
+      `4px solid ${$active ? theme.colors.selectionHighlight : "transparent"}`};
     content: "";
-    height: ${({ theme }) => theme.sizes.startMenu.sideBar.height};
+    height: ${({ theme }) => theme.sizes.startMenu.sideBar.buttonHeight}px;
     left: 0;
     position: absolute;
     width: ${({ theme }) => theme.sizes.startMenu.sideBar.width}px;
@@ -36,6 +36,7 @@ const StyledSidebarButton = styled.li<StyledSidebarButtonProps>`
       height: ${({ theme }) => theme.sizes.startMenu.sideBar.iconSize};
       left: ${({ theme }) => theme.sizes.startMenu.sideBar.iconSize};
       margin-left: 1px;
+      pointer-events: none;
       position: absolute;
       width: ${({ theme }) => theme.sizes.startMenu.sideBar.iconSize};
     }

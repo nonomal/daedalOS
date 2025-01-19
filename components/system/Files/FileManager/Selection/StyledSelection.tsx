@@ -6,9 +6,9 @@ const NoGlobalPointerEvents = createGlobalStyle`
   }
 `;
 
-const StyledSelectionComponent = styled.span`
-  background-color: ${({ theme }) => theme.colors.highlightBackground};
-  border: ${({ theme }) => `1px solid ${theme.colors.highlight}`};
+export const StyledSelectionComponent = styled.span`
+  background-color: ${({ theme }) => theme.colors.selectionHighlightBackground};
+  border: ${({ theme }) => `1px solid ${theme.colors.selectionHighlight}`};
   position: absolute;
   z-index: 2;
 `;

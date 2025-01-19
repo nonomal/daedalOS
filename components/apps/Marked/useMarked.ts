@@ -1,12 +1,15 @@
+import { basename } from "path";
+import { useCallback, useEffect } from "react";
+import { type ContainerHookProps } from "components/system/Apps/AppContainer";
 import useTitle from "components/system/Window/useTitle";
 import { useFileSystem } from "contexts/fileSystem";
 import { useProcesses } from "contexts/process";
-import { basename } from "path";
-import { useCallback, useEffect } from "react";
-import { haltEvent, isYouTubeUrl, loadFiles } from "utils/functions";
+import { loadFiles } from "utils/functions";
+import { useLinkHandler } from "hooks/useLinkHandler";
 
-type MarkedOptions = {
-  headerIds?: boolean;
+export type MarkedOptions = {
+  headerIds: boolean;
+  mangle: boolean;
 };
 
 declare global {
@@ -20,44 +23,51 @@ declare global {
   }
 }
 
-const useMarked = (
-  id: string,
-  url: string,
-  containerRef: React.MutableRefObject<HTMLDivElement | null>,
-  setLoading: React.Dispatch<React.SetStateAction<boolean>>,
-  loading: boolean
-): void => {
+const useMarked = ({
+  containerRef,
+  id,
+  loading,
+  setLoading,
+  url,
+}: ContainerHookProps): void => {
   const { readFile } = useFileSystem();
   const { prependFileToTitle } = useTitle(id);
-  const { open, processes: { [id]: { libs = [] } = {} } = {} } = useProcesses();
+  const { processes: { [id]: { libs = [] } = {} } = {} } = useProcesses();
+  const openLink = useLinkHandler();
+  const getContainer = useCallback(
+    (): HTMLElement | null =>
+      containerRef.current?.querySelector("article") as HTMLElement,
+    [containerRef]
+  );
   const loadFile = useCallback(async () => {
     const markdownFile = await readFile(url);
-    const container = containerRef.current?.querySelector(
-      "article"
-    ) as HTMLElement;
+    const container = getContainer();
 
     if (container instanceof HTMLElement) {
+      container.classList.remove("drop");
       container.innerHTML = window.DOMPurify.sanitize(
         window.marked.parse(markdownFile.toString(), {
           headerIds: false,
+          mangle: false,
         })
       );
-      container.querySelectorAll("a").forEach((link) =>
-        link.addEventListener("click", (event) => {
-          haltEvent(event);
-
-          if (isYouTubeUrl(link.href)) {
-            open("VideoPlayer", { url: link.href });
-          } else {
-            window.open(link.href, "_blank", "noopener, noreferrer");
-          }
-        })
-      );
+      container
+        .querySelectorAll("a")
+        .forEach((link) =>
+          link.addEventListener("click", (event) =>
+            openLink(
+              event,
+              link.href || "",
+              link.pathname,
+              link.textContent || ""
+            )
+          )
+        );
       container.scrollTop = 0;
     }
 
     prependFileToTitle(basename(url));
-  }, [containerRef, open, prependFileToTitle, readFile, url]);
+  }, [getContainer, openLink, prependFileToTitle, readFile, url]);
 
   useEffect(() => {
     if (loading) {
@@ -70,8 +80,11 @@ const useMarked = (
   }, [libs, loading, setLoading]);
 
   useEffect(() => {
-    if (!loading && url) loadFile();
-  }, [loadFile, loading, url]);
+    if (!loading) {
+      if (url) loadFile();
+      else getContainer()?.classList.add("drop");
+    }
+  }, [getContainer, loadFile, loading, url]);
 };
 
 export default useMarked;

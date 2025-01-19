@@ -1,8 +1,10 @@
 type BaseLoadOptions = {
   allowScriptAccess?: boolean;
-  autoplay?: boolean;
+  autoplay?: "auto" | "off" | "on";
   backgroundColor?: string | null;
   letterbox?: "fullscreen" | "off" | "on";
+  menu?: boolean;
+  unmuteOverlay?: "hidden";
 };
 
 type Config = {
@@ -15,7 +17,10 @@ type DataLoadOptions = {
 };
 
 export type RufflePlayer = HTMLElement & {
+  isPlaying: () => boolean;
   load: (options: BaseLoadOptions & DataLoadOptions) => Promise<void>;
+  pause: () => void;
+  play: () => void;
 };
 
 type SourceAPI = {

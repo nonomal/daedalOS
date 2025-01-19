@@ -5,53 +5,56 @@ const StyledNavigation = styled.nav`
   display: flex;
   height: ${({ theme }) => theme.sizes.fileExplorer.navBarHeight};
 
-  button {
+  svg {
+    color: #fff;
+    fill: currentColor;
     height: 16px;
-    margin: 13px 9px;
+    transition: color 0.35s ease;
     width: 16px;
+  }
 
-    svg {
-      color: #fff;
-      fill: currentColor;
-      height: 16px;
-      width: 16px;
-
-      &:hover {
-        color: rgb(50, 152, 254);
-        transition: fill 0.5s ease;
-      }
-
-      &:active {
-        color: rgb(54, 116, 178);
-        transition: none;
-      }
-    }
+  > button {
+    height: 16px;
+    max-height: 36px;
+    max-width: 34px;
+    min-height: 36px;
+    min-width: 34px;
 
     &[title^="Up"] {
-      margin-right: 8px;
+      max-width: 33px;
+      min-width: 33px;
       position: relative;
       right: -8px;
+      top: -1px;
     }
 
     &[title="Recent locations"] {
-      left: 56px;
+      left: 55px;
       position: absolute;
 
       svg {
         stroke: currentColor;
         stroke-width: 3px;
-        width: 6px;
+        width: 7px;
+      }
+    }
+
+    &:active {
+      svg {
+        color: rgb(54, 116, 178);
+        transition: none;
+      }
+    }
+
+    &:hover {
+      svg {
+        color: rgb(50, 152, 254);
       }
     }
 
     &:disabled {
       svg {
         color: rgb(140, 140, 140);
-
-        &:hover,
-        &:active {
-          color: rgb(140, 140, 140);
-        }
       }
     }
   }

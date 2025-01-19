@@ -1,16 +1,16 @@
+import { useTheme } from "styled-components";
+import { type Position } from "react-rnd";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import useMinMaxRef from "components/system/Window/RndWindow/useMinMaxRef";
+import { type Size } from "components/system/Window/RndWindow/useResizable";
 import {
+  WINDOW_OFFSCREEN_BUFFER_PX,
   cascadePosition,
   centerPosition,
   isWindowOutsideBounds,
-  WINDOW_OFFSCREEN_BUFFER_PX,
 } from "components/system/Window/functions";
-import useMinMaxRef from "components/system/Window/RndWindow/useMinMaxRef";
-import type { Size } from "components/system/Window/RndWindow/useResizable";
 import { useProcesses } from "contexts/process";
 import { useSession } from "contexts/session";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import type { Position } from "react-rnd";
-import { useTheme } from "styled-components";
 import { calcInitialPosition, getWindowViewport } from "utils/functions";
 
 type Draggable = [Position, React.Dispatch<React.SetStateAction<Position>>];
@@ -48,8 +48,8 @@ const useDraggable = (id: string, size: Size): Draggable => {
           const yOffset = vwSize.y - WINDOW_OFFSCREEN_BUFFER_PX.BOTTOM;
 
           return {
-            x: x > xOffset ? xOffset : x,
-            y: y > yOffset ? yOffset : y,
+            x: Math.min(x, xOffset),
+            y: Math.min(y, yOffset),
           };
         });
       }
@@ -73,12 +73,12 @@ const useDraggable = (id: string, size: Size): Draggable => {
   }, [autoSizing, blockAutoPositionRef, closing, sessionPosition, sessionSize]);
 
   useLayoutEffect(() => {
-    if (initialRelativePosition && componentWindow) {
+    if (initialRelativePosition && componentWindow && size) {
       setPosition(
-        calcInitialPosition(initialRelativePosition, componentWindow)
+        calcInitialPosition(componentWindow, initialRelativePosition, size)
       );
     }
-  }, [componentWindow, initialRelativePosition]);
+  }, [componentWindow, initialRelativePosition, size]);
 
   return [position, setPosition];
 };

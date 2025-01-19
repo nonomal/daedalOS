@@ -6,9 +6,10 @@ const StyledAddressBar = styled.div`
   background-size: 16px;
   border: 1px solid rgb(83, 83, 83);
   display: flex;
-  height: 30px;
-  margin: 6px 12px 6px 5px;
-  padding: 0 22px 2px 24px;
+  height: ${({ theme }) => theme.sizes.fileExplorer.navInputHeight}px;
+  margin: 6px 12px 5px 5px;
+  overflow: hidden;
+  padding: 0 22px 2px 25px;
   position: relative;
   width: 100%;
 
@@ -19,29 +20,35 @@ const StyledAddressBar = styled.div`
     font-family: ${({ theme }) => theme.formats.systemFont};
     font-size: 12px;
     font-weight: 400;
-    height: 28px;
+    height: ${({ theme }) => theme.sizes.fileExplorer.navInputHeight - 2}px;
     padding-bottom: 2px;
     text-overflow: ellipsis;
     white-space: nowrap;
-    width: calc(100% - 6px);
+    width: calc(100% - 2px);
+
+    &:focus,
+    &.inputing {
+      height: ${({ theme }) => theme.sizes.fileExplorer.navInputHeight}px;
+    }
   }
 
   img {
     left: 2px;
     position: absolute;
-    top: 5px;
+    top: 1px;
   }
 
-  #refresh {
+  .action {
     background-color: rgb(25, 25, 25);
-    height: 28px;
+    display: flex;
+    height: ${({ theme }) => theme.sizes.fileExplorer.navInputHeight - 2}px;
     margin: 0;
+    place-content: center;
+    place-items: center;
     position: absolute;
     right: 0;
-    stroke: rgb(128, 128, 128);
-    stroke-width: 3;
     top: 0;
-    width: 28px;
+    width: 24px;
 
     &:hover {
       background-color: rgb(27, 41, 49);
@@ -51,6 +58,23 @@ const StyledAddressBar = styled.div`
     &:active {
       background-color: rgb(28, 57, 71);
       border: 1px solid rgb(38, 160, 218);
+    }
+
+    svg {
+      color: rgb(128, 128, 128);
+      stroke: rgb(128, 128, 128);
+
+      &.refresh {
+        position: relative;
+        stroke-width: 3;
+        top: -1px;
+      }
+
+      &.go-to {
+        height: 12px;
+        stroke-width: 2;
+        width: 12px;
+      }
     }
   }
 `;

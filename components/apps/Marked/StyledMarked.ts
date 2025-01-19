@@ -1,19 +1,24 @@
 import styled from "styled-components";
+import Message from "styles/common/Message";
+import ScrollBars from "styles/common/ScrollBars";
+import { DEFAULT_SCROLLBAR_WIDTH } from "utils/constants";
 
 const StyledMarked = styled.div`
   article {
+    ${ScrollBars(DEFAULT_SCROLLBAR_WIDTH, 0, 0, "light")};
     background-color: #f9f9f9;
     box-sizing: border-box;
     font-size: 16px;
     height: 100%;
     line-height: 1.5;
-    overflow-y: scroll;
+    overflow-y: auto;
     padding: 16px 32px;
     width: 100%;
     word-wrap: break-word;
 
     * {
       all: revert;
+      user-select: text;
     }
 
     a {
@@ -130,6 +135,10 @@ const StyledMarked = styled.div`
       font-size: 85%;
       margin: 0;
       padding: 0.2em 0.4em;
+    }
+
+    &.drop {
+      ${Message("Drop markdown file here", "#000")};
     }
   }
 `;

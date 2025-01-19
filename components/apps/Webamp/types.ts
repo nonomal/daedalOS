@@ -1,6 +1,5 @@
-import type { Position } from "react-rnd";
-import type Webamp from "webamp";
-import type { Track } from "webamp";
+import { type Position } from "react-rnd";
+import { type Options, type Track, type default as Webamp } from "webamp";
 
 type ButterChurnPreset = {
   getPreset: () => Promise<unknown>;
@@ -15,8 +14,6 @@ export type ButterChurnWebampPreset = {
 };
 
 export type SkinData = Record<string, unknown>;
-
-type EmitterEventData = SkinData;
 
 type CloseWindow = {
   type: "CLOSE_WINDOW";
@@ -49,6 +46,11 @@ type SelectPresetAtIndex = {
   type: "SELECT_PRESET_AT_INDEX";
 };
 
+type SetMilkdropDesktop = {
+  enabled: false;
+  type: "SET_MILKDROP_DESKTOP";
+};
+
 type SetSkinData = {
   data: SkinData;
   type: "SET_SKIN_DATA";
@@ -76,12 +78,10 @@ export type WebampCI = Webamp & {
   _actionEmitter: {
     on: (
       event: string,
-      listener: (emitterEvent: {
-        data?: EmitterEventData;
-        type: string;
-      }) => void
+      listener: (emitterEvent: { data?: SkinData; type: string }) => void
     ) => () => void;
   };
+  options: Options;
   store: {
     dispatch: (
       command:
@@ -92,6 +92,7 @@ export type WebampCI = Webamp & {
         | PresetRequested
         | SelectPresetAtIndex
         | SetFocusedWindow
+        | SetMilkdropDesktop
         | SetSkinData
         | UpdateTrackInfo
         | UpdateWindowPositions
@@ -128,9 +129,20 @@ export type WebampCI = Webamp & {
   };
 };
 
+export type WebampApiResponse = {
+  data: {
+    skins: {
+      nodes: {
+        download_url?: string;
+      }[];
+    };
+  };
+};
+
 declare global {
   interface Window {
     Webamp: typeof Webamp;
+    WebampGlobal: WebampCI;
     butterchurn: {
       default: unknown;
     };

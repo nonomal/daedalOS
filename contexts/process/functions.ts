@@ -1,9 +1,9 @@
 import processDirectory from "contexts/process/directory";
-import type {
-  Process,
-  ProcessArguments,
-  ProcessElements,
-  Processes,
+import {
+  type Process,
+  type ProcessArguments,
+  type ProcessElements,
+  type Processes,
 } from "contexts/process/types";
 import { PREVENT_SCROLL, PROCESS_DELIMITER } from "utils/constants";
 import { preloadLibs } from "utils/functions";
@@ -55,9 +55,11 @@ export const openProcess =
   (processId: string, processArguments: ProcessArguments, icon?: string) =>
   (currentProcesses: Processes): Processes => {
     const { url = "" } = processArguments;
-    const { libs, singleton } = processDirectory[processId] || {};
+    const { dependantLibs, libs, singleton } =
+      processDirectory[processId] || {};
 
     if (libs) preloadLibs(libs);
+    if (dependantLibs) preloadLibs(dependantLibs);
 
     if (singleton) {
       const currentPid = Object.keys(currentProcesses).find(

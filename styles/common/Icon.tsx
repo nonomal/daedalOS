@@ -1,7 +1,16 @@
-import { forwardRef, memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import styled from "styled-components";
-import { ICON_CACHE, YT_ICON_CACHE } from "utils/constants";
-import { cleanUpBufferUrl, imageSrc, imageSrcs } from "utils/functions";
+import { SUPPORTED_ICON_PIXEL_RATIOS } from "utils/constants";
+import {
+  cleanUpBufferUrl,
+  createFallbackSrcSet,
+  getExtension,
+  getMimeType,
+  imageSrc,
+  imageSrcs,
+  isDynamicIcon,
+  supportsWebp,
+} from "utils/functions";
 
 export type IconProps = {
   $eager?: boolean;
@@ -12,55 +21,48 @@ export type IconProps = {
 
 type StyledIconProps = Pick<IconProps, "$eager" | "$moving"> & {
   $height: number;
+  $loaded: boolean;
   $offset: number | string;
   $width: number;
 };
 
-const StyledIcon = styled.img
-  .withConfig({
-    shouldForwardProp: (prop, defaultValidatorFn) =>
-      ["fetchpriority"].includes(prop) || defaultValidatorFn(prop),
-  })
-  .attrs<StyledIconProps>(({ $eager = false, $height, $width }) => ({
+const StyledIcon = styled.img.attrs<StyledIconProps>(
+  ({ $eager = false, $height, $width }) => ({
     decoding: "async",
     draggable: false,
-    fetchpriority: $eager ? "high" : undefined,
+    fetchPriority: $eager ? "high" : undefined,
     height: $height,
     loading: $eager ? "eager" : "lazy",
     width: $width,
-  }))<StyledIconProps>`
+  })
+)<StyledIconProps>`
   aspect-ratio: 1;
-  left: ${({ $offset }) => $offset};
+  left: ${({ $offset }) => $offset || undefined};
   max-height: ${({ $height }) => $height}px;
   max-width: ${({ $width }) => $width}px;
   min-height: ${({ $height }) => $height}px;
   min-width: ${({ $width }) => $width}px;
   object-fit: contain;
-  opacity: ${({ $moving }) => ($moving ? 0.5 : 1)};
-  top: ${({ $offset }) => $offset};
+  opacity: ${({ $moving }) => ($moving ? "50%" : "100%")};
+  pointer-events: none;
+  top: ${({ $offset }) => $offset || undefined};
+  visibility: ${({ $loaded }) => ($loaded ? "visible" : "hidden")};
 `;
 
-const SUPPORTED_PIXEL_RATIOS = [3, 2, 1];
-
-const Icon = forwardRef<
+const Icon: FCWithRef<
   HTMLImageElement,
   IconProps & React.ImgHTMLAttributes<HTMLImageElement>
->((props, ref) => {
+> = ({ displaySize = 0, imgSize = 0, ref, src = "", ...componentProps }) => {
   const [loaded, setLoaded] = useState(false);
-  const { displaySize = 0, imgSize = 0, src = "", ...componentProps } = props;
-  const style = useMemo<React.CSSProperties>(
-    () => ({ visibility: loaded ? "visible" : "hidden" }),
-    [loaded]
+  const isDynamic = isDynamicIcon(src);
+  const imgSrc = useMemo(
+    () =>
+      isDynamic && !supportsWebp()
+        ? src.replace(getExtension(src), ".png")
+        : src,
+    [isDynamic, src]
   );
-  const isStaticIcon =
-    !src ||
-    src.startsWith("blob:") ||
-    src.startsWith("http:") ||
-    src.startsWith("https:") ||
-    src.startsWith("data:") ||
-    src.startsWith(ICON_CACHE) ||
-    src.startsWith(YT_ICON_CACHE) ||
-    src.endsWith(".ico");
+  const srcExt = getExtension(imgSrc);
   const dimensionProps = useMemo(() => {
     const size = displaySize > imgSize ? imgSize : displaySize || imgSize;
     const $offset = displaySize > imgSize ? `${displaySize - imgSize}px` : 0;
@@ -83,24 +85,33 @@ const Icon = forwardRef<
   const RenderedIcon = (
     <StyledIcon
       ref={ref}
+      $loaded={loaded}
       onError={({ target }) => {
-        const { currentSrc = "" } = (target || {}) as HTMLImageElement;
+        const { currentSrc = "" } = (target as HTMLImageElement) || {};
 
-        if (currentSrc && !failedUrls.includes(currentSrc)) {
+        try {
           const { pathname } = new URL(currentSrc);
 
-          setFailedUrls((currentFailedUrls) => [
-            ...currentFailedUrls,
-            pathname,
-          ]);
+          if (pathname && !failedUrls.includes(pathname)) {
+            setFailedUrls((currentFailedUrls) => [
+              ...currentFailedUrls,
+              pathname,
+            ]);
+          }
+        } catch {
+          // Ignore failure to log failed url
         }
       }}
       onLoad={() => setLoaded(true)}
-      src={isStaticIcon ? src : imageSrc(src, imgSize, 1, ".png")}
+      src={isDynamic ? imageSrc(imgSrc, imgSize, 1, srcExt) : src || undefined}
       srcSet={
-        isStaticIcon ? undefined : imageSrcs(src, imgSize, ".png", failedUrls)
+        isDynamic
+          ? imageSrcs(imgSrc, imgSize, srcExt, failedUrls) ||
+            (failedUrls.length === 0
+              ? ""
+              : createFallbackSrcSet(imgSrc, failedUrls))
+          : undefined
       }
-      style={style}
       {...componentProps}
       {...dimensionProps}
     />
@@ -108,9 +119,9 @@ const Icon = forwardRef<
 
   return (
     <picture>
-      {!isStaticIcon &&
-        SUPPORTED_PIXEL_RATIOS.map((ratio) => {
-          const srcSet = imageSrc(src, imgSize, ratio, ".webp");
+      {isDynamic &&
+        SUPPORTED_ICON_PIXEL_RATIOS.map((ratio) => {
+          const srcSet = imageSrc(imgSrc, imgSize, ratio, srcExt);
           const mediaRatio = ratio - 0.99;
 
           if (
@@ -130,13 +141,13 @@ const Icon = forwardRef<
                   : undefined
               }
               srcSet={srcSet}
-              type="image/webp"
+              type={getMimeType(srcExt)}
             />
           );
         })}
       {RenderedIcon}
     </picture>
   );
-});
+};
 
 export default memo(Icon);

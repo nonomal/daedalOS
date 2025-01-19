@@ -1,14 +1,16 @@
-import type { FocusEntryFunctions } from "components/system/Files/FileManager/useFocusableEntries";
-import { useSession } from "contexts/session";
 import { join } from "path";
+import { type Position } from "react-rnd";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Position } from "react-rnd";
-import { MILLISECONDS_IN_SECOND, UNKNOWN_ICON } from "utils/constants";
+import { type FocusEntryFunctions } from "components/system/Files/FileManager/useFocusableEntries";
+import { useSession } from "contexts/session";
 import {
   getHtmlToImage,
+  getMimeType,
   haltEvent,
+  trimCanvasToTopLeft,
   updateIconPositions,
 } from "utils/functions";
+import { useFileSystem } from "contexts/fileSystem";
 
 type DraggableEntryProps = {
   draggable: boolean;
@@ -27,24 +29,25 @@ export type DragPosition = Partial<
   Position & { offsetX: number; offsetY: number }
 >;
 
+const FILE_MANAGER_TOP_PADDING = 5;
+
 const useDraggableEntries = (
   focusedEntries: string[],
-  { blurEntry, focusEntry }: FocusEntryFunctions,
-  fileManagerRef: React.MutableRefObject<HTMLOListElement | null>,
+  { focusEntry }: FocusEntryFunctions,
+  fileManagerRef: React.RefObject<HTMLOListElement | null>,
   isSelecting: boolean,
   allowMoving?: boolean
 ): DraggableEntry => {
-  const lastfileManagerChildRef = useRef<Element | null | undefined>(
-    fileManagerRef.current?.lastElementChild
-  );
   const [dropIndex, setDropIndex] = useState(-1);
+  const { exists } = useFileSystem();
   const { iconPositions, sortOrders, setIconPositions, setSortOrder } =
     useSession();
-  const dragImageRef = useRef<HTMLImageElement | null>();
+  const dragImageRef = useRef<HTMLImageElement>(null);
+  const adjustedCaptureOffsetRef = useRef(false);
+  const capturedImageOffset = useRef({ x: 0, y: 0 });
   const dragPositionRef = useRef<DragPosition>(
     Object.create(null) as DragPosition
   );
-  const draggedOnceRef = useRef(false);
   const onDragging = ({ clientX: x, clientY: y }: DragEvent): void => {
     dragPositionRef.current = { ...dragPositionRef.current, x, y };
   };
@@ -63,7 +66,8 @@ const useDraggableEntries = (
           sortOrders,
           dragPositionRef.current,
           focusedEntries,
-          setIconPositions
+          setIconPositions,
+          exists
         );
         fileManagerRef.current?.removeEventListener("dragover", onDragging);
       } else if (dropIndex !== -1) {
@@ -77,8 +81,6 @@ const useDraggableEntries = (
           return sortedEntries;
         });
       }
-
-      blurEntry();
     };
   const onDragOver =
     (file: string): React.DragEventHandler =>
@@ -97,50 +99,59 @@ const useDraggableEntries = (
       renaming: boolean
     ): React.DragEventHandler =>
     (event) => {
-      if (renaming) {
+      if (renaming || "ontouchstart" in window) {
         haltEvent(event);
         return;
       }
 
       focusEntry(file);
-      event.dataTransfer.setData(
+
+      const singleFile = focusedEntries.length <= 1;
+
+      event.nativeEvent.dataTransfer?.setData(
         "application/json",
         JSON.stringify(
-          focusedEntries.length <= 1
+          singleFile
             ? [join(entryUrl, file)]
             : focusedEntries.map((entryFile) => join(entryUrl, entryFile))
         )
       );
 
-      if (focusedEntries.length > 1 && dragImageRef.current) {
-        const iconPositionKeys = Object.keys(iconPositions);
+      if (singleFile) {
+        event.nativeEvent.dataTransfer?.setData(
+          "DownloadURL",
+          `${getMimeType(file) || "application/octet-stream"}:${file}:${
+            window.location.href
+          }${join(entryUrl, file)}`
+        );
+      }
 
-        if (
-          allowMoving &&
-          !draggedOnceRef.current &&
-          ((lastfileManagerChildRef.current &&
-            fileManagerRef.current?.lastElementChild &&
-            fileManagerRef.current.lastElementChild !==
-              lastfileManagerChildRef.current) ||
-            focusedEntries.every((entryFile) =>
-              iconPositionKeys.includes(`${entryUrl}/${entryFile}`)
-            ))
-        ) {
-          draggedOnceRef.current = true;
+      if (!singleFile && dragImageRef.current) {
+        if (!adjustedCaptureOffsetRef.current) {
+          adjustedCaptureOffsetRef.current = true;
+
+          const hasCapturedImageOffset =
+            capturedImageOffset.current.x || capturedImageOffset.current.y;
+
+          capturedImageOffset.current = {
+            x: hasCapturedImageOffset
+              ? event.nativeEvent.clientX - capturedImageOffset.current.x
+              : event.nativeEvent.offsetX,
+            y: hasCapturedImageOffset
+              ? event.nativeEvent.clientY - capturedImageOffset.current.y
+              : event.nativeEvent.offsetY + FILE_MANAGER_TOP_PADDING,
+          };
         }
 
-        const dragX = isMainContainer
-          ? event.nativeEvent.clientX
-          : event.nativeEvent.offsetX;
-        const dragY = draggedOnceRef.current
-          ? event.nativeEvent.clientY
-          : event.nativeEvent.offsetY;
-
-        event.dataTransfer.setDragImage(dragImageRef.current, dragX, dragY);
-
-        if (allowMoving && !draggedOnceRef.current) {
-          draggedOnceRef.current = true;
-        }
+        event.nativeEvent.dataTransfer?.setDragImage(
+          dragImageRef.current,
+          isMainContainer
+            ? capturedImageOffset.current.x
+            : event.nativeEvent.offsetX,
+          isMainContainer
+            ? capturedImageOffset.current.y
+            : event.nativeEvent.offsetY
+        );
       }
 
       Object.assign(event.dataTransfer, { effectAllowed: "move" });
@@ -161,7 +172,9 @@ const useDraggableEntries = (
   const updateDragImage = useCallback(async () => {
     if (fileManagerRef.current) {
       const focusedElements = [
-        ...fileManagerRef.current.querySelectorAll(".focus-within"),
+        ...fileManagerRef.current.querySelectorAll<HTMLLIElement>(
+          ".focus-within"
+        ),
       ];
 
       if (focusedElements.length > 1) {
@@ -169,50 +182,50 @@ const useDraggableEntries = (
         else dragImageRef.current = new Image();
 
         const htmlToImage = await getHtmlToImage();
-        const newDragImage = await htmlToImage?.toPng(fileManagerRef.current, {
-          filter: (element) => {
-            return (
-              !(element instanceof HTMLSourceElement) &&
-              focusedElements.some((focusedElement) =>
-                focusedElement.contains(element)
-              )
-            );
-          },
-          imagePlaceholder: UNKNOWN_ICON,
-          skipAutoScale: true,
-        });
 
-        if (newDragImage) {
-          dragImageRef.current.src = newDragImage;
+        if (!htmlToImage) return;
+
+        try {
+          const { UNKNOWN_ICON } = await import(
+            "components/system/Files/FileManager/icons"
+          );
+          const elementsHavePositions = focusedElements.every(
+            ({ style }) => style?.gridRowStart && style?.gridColumnStart
+          );
+          const capturedFileManager = await htmlToImage?.toCanvas(
+            fileManagerRef.current,
+            {
+              filter: (element) =>
+                !(element instanceof HTMLSourceElement) &&
+                focusedElements.some((focusedElement) =>
+                  focusedElement.contains(element)
+                ),
+              imagePlaceholder: UNKNOWN_ICON,
+              skipAutoScale: true,
+            }
+          );
+          const trimmedCapture = elementsHavePositions
+            ? trimCanvasToTopLeft(capturedFileManager)
+            : capturedFileManager;
+
+          dragImageRef.current.src = trimmedCapture.toDataURL();
+          capturedImageOffset.current = {
+            x: capturedFileManager.width - trimmedCapture.width,
+            y: capturedFileManager.height - trimmedCapture.height,
+          };
+        } catch {
+          // Ignore failure to capture
         }
       }
     }
   }, [fileManagerRef]);
-  const debounceTimer = useRef<number>();
 
   useEffect(() => {
-    if (
-      fileManagerRef.current?.lastElementChild &&
-      !lastfileManagerChildRef.current
-    ) {
-      lastfileManagerChildRef.current = fileManagerRef.current.lastElementChild;
+    if (!isSelecting && focusedEntries.length > 1) updateDragImage();
+    else if (focusedEntries.length === 0) {
+      adjustedCaptureOffsetRef.current = false;
     }
-  }, [fileManagerRef, focusedEntries]);
-
-  useEffect(() => {
-    if (debounceTimer.current) window.clearTimeout(debounceTimer.current);
-
-    debounceTimer.current = window.setTimeout(() => {
-      debounceTimer.current = undefined;
-      updateDragImage();
-    }, MILLISECONDS_IN_SECOND / 2);
-  }, [focusedEntries, updateDragImage]);
-
-  useEffect(() => {
-    if (!isSelecting && focusedEntries.length > 1) {
-      updateDragImage();
-    }
-  }, [focusedEntries.length, isSelecting, updateDragImage]);
+  }, [focusedEntries, isSelecting, updateDragImage]);
 
   return (entryUrl: string, file: string, renaming: boolean) => ({
     draggable: true,

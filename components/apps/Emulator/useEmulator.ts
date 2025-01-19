@@ -1,36 +1,39 @@
-import type { Core } from "components/apps/Emulator/config";
-import { emulatorCores } from "components/apps/Emulator/config";
-import type { Emulator } from "components/apps/Emulator/types";
+import { basename, extname, join } from "path";
+import { useCallback, useEffect, useRef } from "react";
+import { type Core, emulatorCores } from "components/apps/Emulator/config";
+import { type Emulator } from "components/apps/Emulator/types";
+import { type ContainerHookProps } from "components/system/Apps/AppContainer";
+import useEmscriptenMount from "components/system/Files/FileManager/useEmscriptenMount";
 import useTitle from "components/system/Window/useTitle";
 import { useFileSystem } from "contexts/fileSystem";
+import { type EmscriptenFS } from "contexts/fileSystem/useAsyncFs";
 import { useProcesses } from "contexts/process";
-import { basename, dirname, extname, join } from "path";
-import { useCallback, useEffect, useRef } from "react";
-import { ICON_CACHE, ICON_CACHE_EXTENSION, SAVE_PATH } from "utils/constants";
-import { bufferToUrl, loadFiles } from "utils/functions";
+import { SAVE_PATH } from "utils/constants";
+import { bufferToUrl, getExtension, loadFiles } from "utils/functions";
 import { zipAsync } from "utils/zipFunctions";
+import { useSnapshots } from "hooks/useSnapshots";
 
-const getCore = (extension: string): [string, Core] => {
-  const lcExt = extension.toLowerCase();
-
-  return (Object.entries(emulatorCores).find(([, { ext }]) =>
-    ext.includes(lcExt)
+const getCore = (extension: string): [string, Core] =>
+  (Object.entries(emulatorCores).find(([, { ext }]) =>
+    ext.includes(extension)
   ) || []) as [string, Core];
-};
 
-const useEmulator = (
-  id: string,
-  url: string,
-  containerRef: React.MutableRefObject<HTMLDivElement | null>,
-  setLoading: React.Dispatch<React.SetStateAction<boolean>>,
-  loading: boolean
-): void => {
-  const { exists, mkdirRecursive, readFile, updateFolder, writeFile } =
-    useFileSystem();
-  const { linkElement, processes: { [id]: { closing = false } = {} } = {} } =
-    useProcesses();
+const useEmulator = ({
+  containerRef,
+  id,
+  loading,
+  setLoading,
+  url,
+}: ContainerHookProps): void => {
+  const { exists, readFile } = useFileSystem();
+  const { createSnapshot } = useSnapshots();
+  const mountEmFs = useEmscriptenMount();
+  const {
+    linkElement,
+    processes: { [id]: { closing = false, libs = [] } = {} } = {},
+  } = useProcesses();
   const { prependFileToTitle } = useTitle(id);
-  const emulatorRef = useRef<Emulator>();
+  const emulatorRef = useRef<Emulator>(undefined);
   const loadedUrlRef = useRef<string>("");
   const loadRom = useCallback(async () => {
     if (!url) return;
@@ -40,7 +43,13 @@ const useEmulator = (
     if (loadedUrlRef.current) {
       if (loadedUrlRef.current !== url) {
         loadedUrlRef.current = "";
-        window.EJS_terminate?.();
+
+        try {
+          window.EJS_terminate?.();
+        } catch {
+          // Ignore errors during termination
+        }
+
         if (containerRef.current) {
           const div = document.createElement("div");
 
@@ -55,12 +64,11 @@ const useEmulator = (
     }
 
     loadedUrlRef.current = url;
+    window.EJS_gameName = basename(url, extname(url));
 
-    const ext = extname(url);
-
-    window.EJS_gameName = basename(url, ext);
-
-    const [console, { core = "", zip = false } = {}] = getCore(ext);
+    const [console, { core = "", zip = false } = {}] = getCore(
+      getExtension(url)
+    );
     const rom = await readFile(url);
 
     window.EJS_gameUrl = bufferToUrl(
@@ -78,6 +86,7 @@ const useEmulator = (
         }
 
         setLoading(false);
+        mountEmFs(window.FS as EmscriptenFS, "EmulatorJs");
         emulatorRef.current = currentEmulator;
       };
 
@@ -86,26 +95,9 @@ const useEmulator = (
     window.EJS_onSaveState = ({ screenshot, state }) => {
       window.EJS_terminate?.();
 
-      const saveState = async (): Promise<void> => {
-        if (!(await exists(SAVE_PATH))) await mkdirRecursive(SAVE_PATH);
-        if (await writeFile(savePath, Buffer.from(state), true)) {
-          const iconCacheRootPath = join(ICON_CACHE, SAVE_PATH);
-          const iconCachePath = join(
-            ICON_CACHE,
-            `${savePath}${ICON_CACHE_EXTENSION}`
-          );
-
-          if (!(await exists(iconCacheRootPath))) {
-            await mkdirRecursive(iconCacheRootPath);
-            updateFolder(dirname(SAVE_PATH));
-          }
-
-          await writeFile(iconCachePath, Buffer.from(screenshot), true);
-          updateFolder(SAVE_PATH, saveName);
-        }
-      };
-
-      if (state) saveState();
+      if (state) {
+        createSnapshot(saveName, Buffer.from(state), Buffer.from(screenshot));
+      }
     };
 
     window.EJS_player = "#emulator";
@@ -123,28 +115,29 @@ const useEmulator = (
       screenshot: false,
     };
 
-    await loadFiles(["Program Files/EmulatorJs/loader.js"], undefined, true);
+    await loadFiles(libs, undefined, true);
 
     prependFileToTitle(`${window.EJS_gameName} (${console})`);
   }, [
     containerRef,
+    createSnapshot,
     exists,
-    mkdirRecursive,
+    libs,
+    mountEmFs,
     prependFileToTitle,
     readFile,
     setLoading,
-    updateFolder,
     url,
-    writeFile,
   ]);
 
   useEffect(() => {
     if (url) loadRom();
     else {
       setLoading(false);
+      mountEmFs(window.FS as EmscriptenFS, "EmulatorJs");
       containerRef.current?.classList.add("drop");
     }
-  }, [containerRef, loadRom, setLoading, url]);
+  }, [containerRef, loadRom, mountEmFs, setLoading, url]);
 
   useEffect(() => {
     if (!loading) {

@@ -1,4 +1,4 @@
-import type { ITerminalAddon, Terminal } from "xterm";
+import { type ITerminalAddon, type Terminal } from "xterm";
 
 export type CommandInterpreter = (command?: string) => Promise<string>;
 
@@ -44,3 +44,11 @@ declare global {
     Terminal?: typeof Terminal;
   }
 }
+
+export type NsEntry = {
+  data: string;
+};
+
+export type NsResponse = {
+  Answer: NsEntry[];
+};

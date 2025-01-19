@@ -1,19 +1,12 @@
-import type { Size } from "components/system/Window/RndWindow/useResizable";
-import type { ClockSource, WallpaperFit } from "contexts/session/types";
-import type { AsyncZipOptions } from "fflate";
-import type { ThemeName } from "styles/themes";
+import { type AsyncZipOptions } from "fflate";
+import { type Size } from "components/system/Window/RndWindow/useResizable";
+import { type ClockSource, type WallpaperFit } from "contexts/session/types";
+import { type ThemeName } from "styles/themes";
 
 export const BASE_2D_CONTEXT_OPTIONS: CanvasRenderingContext2DSettings = {
   alpha: false,
   desynchronized: true,
 };
-
-export const IPFS_GATEWAY_URLS = [
-  "https://<CID>.ipfs.cf-ipfs.com/",
-  "https://<CID>.ipfs.dweb.link/",
-  "https://cloudflare-ipfs.com/ipfs/<CID>/",
-  "https://gateway.ipfs.io/ipfs/<CID>/",
-];
 
 export const IFRAME_CONFIG = {
   referrerPolicy: "no-referrer" as React.HTMLAttributeReferrerPolicy,
@@ -35,18 +28,26 @@ export const DEFAULT_WALLPAPER_FIT: WallpaperFit = "fill";
 
 export const THIN_SCROLLBAR_WIDTH = 13;
 
-export const BASE_CLOCK_WIDTH = 68;
+export const THIN_SCROLLBAR_WIDTH_NON_WEBKIT = 9;
+
+export const CLOCK_CANVAS_BASE_WIDTH = 68;
 
 export const SMALLEST_PNG_SIZE = 51;
 
 export const DEFAULT_WINDOW_SIZE: Size = {
-  height: 300,
-  width: 405,
+  height: 510,
+  width: 640,
 };
 
 export const DEFAULT_MAPPED_NAME = "Share";
 
 export const FOCUSABLE_ELEMENT = { tabIndex: -1 };
+
+export const DIV_BUTTON_PROPS = {
+  as: "div",
+  role: "button",
+  ...FOCUSABLE_ELEMENT,
+};
 
 export const FS_HANDLES = "FileSystemAccessHandles";
 
@@ -54,7 +55,15 @@ export const HOME = "/Users/Public";
 
 export const PICTURES_FOLDER = `${HOME}/Pictures`;
 
+export const VIDEOS_FOLDER = `${HOME}/Videos`;
+
+export const INDEX_FILE = "/index.html";
+
+export const PROMPT_FILE = "prompts.json";
+
 export const SLIDESHOW_FILE = "slideshow.json";
+
+export const SLIDESHOW_TIMEOUT_IN_MILLISECONDS = 15000;
 
 export const ICON_GIF_SECONDS = 2;
 
@@ -68,6 +77,15 @@ export const LIST_VIEW_ANIMATION = {
   transition: { duration: 0.15 },
 };
 
+export const HEIF_IMAGE_FORMATS = new Set([
+  ".heic",
+  ".heics",
+  ".heif",
+  ".heifs",
+  ".avci",
+  ".avcs",
+]);
+
 export const TIFF_IMAGE_FORMATS = new Set([
   ".cr2",
   ".dng",
@@ -76,7 +94,10 @@ export const TIFF_IMAGE_FORMATS = new Set([
   ".tiff",
 ]);
 
+export const CLIPBOARD_FILE_EXTENSIONS = new Set([".jpeg", ".jpg", ".png"]);
+
 export const IMAGE_FILE_EXTENSIONS = new Set([
+  ...HEIF_IMAGE_FORMATS,
   ...TIFF_IMAGE_FORMATS,
   ".ani",
   ".apng",
@@ -100,11 +121,25 @@ export const IMAGE_FILE_EXTENSIONS = new Set([
   ".xbm",
 ]);
 
-export const UNSUPPORTED_BACKGROUND_EXTENSIONS = new Set([
+export const UNSUPPORTED_SLIDESHOW_EXTENSIONS = new Set([
+  ...HEIF_IMAGE_FORMATS,
   ...TIFF_IMAGE_FORMATS,
   ".jxl",
   ".qoi",
   ".svg",
+]);
+
+export const TEXT_EDITORS = ["MonacoEditor", "Vim"];
+
+export const CURSOR_FILE_EXTENSIONS = new Set([".ani", ".cur"]);
+
+export const SUMMARIZABLE_FILE_EXTENSIONS = new Set([
+  ".html",
+  ".htm",
+  ".whtml",
+  ".md",
+  ".txt",
+  ".pdf",
 ]);
 
 export const EDITABLE_IMAGE_FILE_EXTENSIONS = new Set([
@@ -121,12 +156,6 @@ export const EDITABLE_IMAGE_FILE_EXTENSIONS = new Set([
   ".webp",
 ]);
 
-export const PHOTO_ICON = "/System/Icons/photo.webp";
-
-export const INVALID_FILE_CHARACTERS = /["*/:<>?\\|]/g;
-
-export const MAX_FILE_NAME_LENGTH = 223;
-
 export const MENU_SEPERATOR = { seperator: true };
 
 export const MILLISECONDS_IN_SECOND = 1000;
@@ -134,77 +163,6 @@ export const MILLISECONDS_IN_SECOND = 1000;
 export const MILLISECONDS_IN_MINUTE = 60000;
 
 export const MILLISECONDS_IN_DAY = 86400000;
-
-export const EXTRACTABLE_EXTENSIONS = new Set([
-  ".001",
-  ".7z",
-  ".ace",
-  ".apk",
-  ".appx",
-  ".arj",
-  ".bz2",
-  ".bzip2",
-  ".cab",
-  ".chm",
-  ".chw",
-  ".cpio",
-  ".deb",
-  ".dll",
-  ".dmg",
-  ".doc",
-  ".docx",
-  ".epub",
-  ".esd",
-  ".exe",
-  ".flv",
-  ".gz",
-  ".gzip",
-  ".hfs",
-  ".hxs",
-  ".img",
-  ".ipa",
-  ".jar",
-  ".lha",
-  ".lit",
-  ".lzh",
-  ".lzma",
-  ".mbr",
-  ".msi",
-  ".ntfs",
-  ".ods",
-  ".odt",
-  ".ova",
-  ".pages",
-  ".pkg",
-  ".ppt",
-  ".qcow",
-  ".qcow2",
-  ".r00",
-  ".rar",
-  ".rpm",
-  ".squashfs",
-  ".swf",
-  ".swm",
-  ".sys",
-  ".tar",
-  ".taz",
-  ".tgz",
-  ".txz",
-  ".udf",
-  ".vdi",
-  ".vhd",
-  ".vhdx",
-  ".vmdk",
-  ".wim",
-  ".xar",
-  ".xip",
-  ".xls",
-  ".xlsx",
-  ".xpi",
-  ".xz",
-  ".z",
-  ".zipx",
-]);
 
 export const MOUNTABLE_EXTENSIONS = new Set([".iso", ".jsdos", ".wsz", ".zip"]);
 
@@ -217,6 +175,8 @@ export const SPREADSHEET_FORMATS = [
 ];
 
 export const MP3_MIME_TYPE = "audio/mpeg";
+
+export const VIDEO_FALLBACK_MIME_TYPE = "video/mp4";
 
 export const NON_BREAKING_HYPHEN = "\u2011";
 
@@ -243,18 +203,34 @@ export const SYSTEM_PATHS = new Set(["/.deletedFiles.log"]);
 
 export const DESKTOP_PATH = `${HOME}/Desktop`;
 
+export const START_MENU_PATH = `${HOME}/Start Menu`;
+
 export const SYSTEM_SHORTCUT_DIRECTORIES = new Set([DESKTOP_PATH]);
 
 export const TRANSITIONS_IN_MILLISECONDS = {
   DOUBLE_CLICK: 500,
   LONG_PRESS: 500,
-  START_MENU: 400,
+  MOUSE_IN_OUT: 300,
+  TASKBAR_ITEM: 400,
   WINDOW: 250,
 };
+
+export const TRANSITIONS_IN_SECONDS = {
+  TASKBAR_ITEM:
+    TRANSITIONS_IN_MILLISECONDS.TASKBAR_ITEM / MILLISECONDS_IN_SECOND,
+  WINDOW: TRANSITIONS_IN_MILLISECONDS.WINDOW / MILLISECONDS_IN_SECOND,
+};
+
+export const KEYPRESS_DEBOUNCE_MS = 150;
 
 export const LONG_PRESS_DELAY_MS = 750;
 
 export const ONE_DAY_IN_MILLISECONDS = 86400000;
+
+export const DEFAULT_INTERSECTION_OPTIONS: IntersectionObserverInit = {
+  rootMargin: "3px",
+  threshold: 0,
+};
 
 export const AUDIO_FILE_EXTENSIONS = new Set([".aac", ".oga", ".wav"]);
 
@@ -271,8 +247,11 @@ export const VIDEO_FILE_EXTENSIONS = new Set([
   ".webm",
 ]);
 
+export const DYNAMIC_PREFIX = ["nostr:"];
+
 export const DYNAMIC_EXTENSION = new Set([
   ...AUDIO_FILE_EXTENSIONS,
+  ...AUDIO_PLAYLIST_EXTENSIONS,
   ...IMAGE_FILE_EXTENSIONS,
   ...TIFF_IMAGE_FORMATS,
   ...VIDEO_FILE_EXTENSIONS,
@@ -287,9 +266,13 @@ export const SAVE_TITLE_CHAR = "\u25CF";
 
 export const ROOT_NAME = "My PC";
 
+export const SYSTEM_PATH = "/System";
+
 export const ROOT_SHORTCUT = `${ROOT_NAME}.url`;
 
-export const ICON_PATH = "/System/Icons";
+export const ICON_PATH = `${SYSTEM_PATH}/Icons`;
+
+export const PHOTO_ICON = `${ICON_PATH}/photo.webp`;
 
 export const USER_ICON_PATH = `${HOME}/Icons`;
 
@@ -317,10 +300,21 @@ export const MOUNTED_FOLDER_ICON = `${ICON_PATH}/mounted.webp`;
 
 export const NEW_FOLDER_ICON = `${ICON_PATH}/new_folder.webp`;
 
-export const UNKNOWN_ICON =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAB0ElEQVR42u2ZVWLbQBiEp/K6DOpb+LF4ip47oCuULpAYH3uAlcbMNOZpm0lsizWz+/3CgEc9aiuFHz9/YYVIcjAAkODcYYDoTyPQHZse7m0E49tLkid/8rz4BuD7RgFIYpW+fvmMXStJEvz+/RuvXr1KG41mVhT5RiECRMUYsUuF0Nv18+fPcXp6ktbrjSzPhRBCDxxUpVKpG+Ls7DSt1eprhwjYWwAdJQD9EGftELV2iCiHCAQMAvT04sVznJ+fpdVqNcuj1hOBJj0wCvECFxcXaeWhIuEUYFADAGZCXF5dpg/3DxmA99YIZVmGRXr58lVqi1CMER8+fOh+pkUS5XIZd7d3ylEIViI5M7wCITqa1wOAtDVPKD1A45andC1ES/N6DZCuzKsIWZr3RoikMK4jZGleD2BsntDOA74tT0gIOZrXEfJmXiti24KleBi1M09SThBIU/P6mZiW5qEXMW3NUzuMGrc8NYRssSE0hFyZVxFyLVgdIcOW51oIWZqHfj9ga15+rOLb8lIRg47m9RoQ/R+eeb0GaGleR8i15XWEqL5VFIIJ87V5u70nvrm+AUF0/8nx4ZlxgOj+9KeTk+Oz8/rrYnIYBAoWeNSj9qwWS/T9vUU9j2EAAAAASUVORK5CYII=";
-
 export const UNKNOWN_ICON_PATH = `${ICON_PATH}/unknown.webp`;
+
+export const TIMESTAMP_DATE_FORMAT: Intl.DateTimeFormatOptions = {
+  day: "2-digit",
+  hour: "2-digit",
+  hour12: false,
+  minute: "2-digit",
+  month: "2-digit",
+  second: "2-digit",
+  year: "numeric",
+};
+
+export const ICON_RES_MAP: Record<number, number> = {
+  64: 96,
+};
 
 export const MAX_RES_ICON_OVERRIDE: Record<string, [number, number]> = {
   desktop: [16, 32],
@@ -334,6 +328,12 @@ export const MAX_RES_ICON_OVERRIDE: Record<string, [number, number]> = {
   videos: [16, 32],
 };
 
+export const SUPPORTED_ICON_PIXEL_RATIOS = [3, 2, 1];
+
+export const SUPPORTED_ICON_SIZES = [16, 32, 48, 96, 144];
+
+export const MAX_ICON_SIZE = 144;
+
 export const DEFAULT_TEXT_FILE_SAVE_PATH = `${DESKTOP_PATH}/Untitled.txt`;
 
 export const DEFAULT_SCROLLBAR_WIDTH = 17;
@@ -345,6 +345,7 @@ export const PACKAGE_DATA = {
   author: {
     email: "dustinbrett@gmail.com",
     name: "Dustin Brett",
+    npub: "npub10uc7hg6wdxhhd7ee8x9c5lr9d0ux7272rv2m0mc03ds54q7quxjss02r3p",
     url: "https://dustinbrett.com",
   },
   description: "Desktop environment in the browser",
@@ -361,8 +362,12 @@ export const BASE_ZIP_CONFIG: AsyncZipOptions = {
 export const HIGH_PRIORITY_REQUEST = { priority: "high" } as RequestInit;
 
 export const HIGH_PRIORITY_ELEMENT = {
-  fetchpriority: "high",
+  fetchPriority: "high",
 } as React.HTMLAttributes<HTMLElement>;
 
-export const isFileSystemSupported = (): boolean =>
-  typeof FileSystemHandle === "function" && "showDirectoryPicker" in window;
+export const DISBALE_AUTO_INPUT_FEATURES = {
+  autoCapitalize: "off",
+  autoComplete: "off",
+  autoCorrect: "off",
+  spellCheck: false,
+};

@@ -1,5 +1,5 @@
-import StyledButton from "components/system/Dialogs/Transfer/StyledButton";
 import styled, { css } from "styled-components";
+import StyledButton from "components/system/Dialogs/StyledButton";
 
 const gradientAnimation = css`
   animation: gradient 5s ease-in-out alternate infinite;
@@ -91,6 +91,10 @@ const StyledTransfer = styled.div`
   h2 {
     font-size: 12px;
     font-weight: 400;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 100%;
   }
 
   nav {
@@ -108,7 +112,7 @@ const StyledTransfer = styled.div`
     ${StyledButton} {
       padding-bottom: 1px;
       position: absolute;
-      right: 23px;
+      right: 22px;
     }
   }
 `;

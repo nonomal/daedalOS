@@ -1,9 +1,14 @@
 import styled from "styled-components";
+import Message from "styles/common/Message";
 
 const buttonSize = "48px";
 const paddingSize = "32px";
 
-const StyledPhotos = styled.div`
+type StyledPhotosProps = {
+  $showImage: boolean;
+};
+
+const StyledPhotos = styled.div<StyledPhotosProps>`
   background-color: #222;
   display: flex;
   height: 100%;
@@ -32,6 +37,7 @@ const StyledPhotos = styled.div`
     }
 
     img {
+      display: ${({ $showImage }) => ($showImage ? "block" : "none")};
       max-height: 100%;
       max-width: 100%;
     }
@@ -83,6 +89,10 @@ const StyledPhotos = styled.div`
         background-color: rgba(100, 100, 100, 50%);
       }
     }
+  }
+
+  &.drop {
+    ${Message("Drop photo file here", "#fff")};
   }
 `;
 

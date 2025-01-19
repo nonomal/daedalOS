@@ -12,7 +12,7 @@ This project is greatly augmented by code from the open source community. Thank 
 ## Tools
 
 - [Jest](https://github.com/facebook/jest)
-- [React Testing Library](https://github.com/testing-library/react-testing-library)
+- [Playwright](https://github.com/microsoft/playwright)
 - [ESLint](https://github.com/eslint/eslint)
 - [Stylelint](https://github.com/stylelint/stylelint)
 - [Prettier](https://github.com/prettier/prettier)
@@ -29,6 +29,7 @@ This project is greatly augmented by code from the open source community. Thank 
 - [isomorphic-git](https://github.com/isomorphic-git/isomorphic-git)
 - [ini](https://github.com/npm/ini)
 - [ani-cursor](https://github.com/captbaritone/webamp/tree/master/packages/ani-cursor)
+- [decode-ico](https://github.com/LinusU/decode-ico)
 - [gif.js](https://github.com/jnordberg/gif.js)
 - [multiformats](https://github.com/multiformats/multiformats)
 - [file-type](https://github.com/sindresorhus/file-type)
@@ -45,8 +46,13 @@ This project is greatly augmented by code from the open source community. Thank 
 - [Matrix](https://github.com/Rezmason/matrix)
 - [QOI Decoder](https://gist.github.com/nicolaslegland/f0577cb49b1e56b729a2c0fc0aa151ba)
 - [jxl.js](https://github.com/niutech/jxl.js)
+- [libheif-js](https://github.com/catdad-experiments/libheif-js)
 - [fix-webm-duration](https://github.com/yusitnikov/fix-webm-duration)
 - [UAParser.js](https://github.com/faisalman/ua-parser-js)
+- [Web Stable Diffusion](https://github.com/mlc-ai/web-stable-diffusion)
+- [mediainfo.js](https://github.com/buzz/mediainfo.js)
+- [exif-js](https://github.com/exif-js/exif-js)
+- [WebLLM](https://github.com/mlc-ai/web-llm)
 
 ## App Libraries
 
@@ -62,6 +68,7 @@ This project is greatly augmented by code from the open source community. Thank 
 - [Butterchurn](https://github.com/jberg/butterchurn)
 - [Eruda](https://github.com/liriliri/eruda)
 - [Pyodide](https://github.com/pyodide/pyodide)
+- [quickjs-emscripten](https://github.com/justjake/quickjs-emscripten)
 - [Video.js](https://github.com/videojs/video.js)
 - [TinyMCE](https://github.com/tinymce/tinymce)
 - [Space Cadet Pinball](https://github.com/alula/SpaceCadetPinball)
@@ -73,7 +80,6 @@ This project is greatly augmented by code from the open source community. Thank 
 - [SheetJS](https://github.com/SheetJS/sheetjs)
 - [Vim.js](https://github.com/coolwanglu/vim.js)
 - [DX-Ball](https://habr.com/en/post/147339/)
-- [Chess](https://sourceforge.net/projects/htmlchess/)
 - [jspaint](https://github.com/1j01/jspaint)
 - [Print.js](https://github.com/crabbly/print.js)
 - [Kiwi IRC](https://github.com/kiwiirc/kiwiirc)
@@ -81,8 +87,14 @@ This project is greatly augmented by code from the open source community. Thank 
 - [rtf.js](https://github.com/tbluemel/rtf.js)
 - [Quake 3](https://github.com/lrusso/Quake3)
 - [opentype.js](https://github.com/opentypejs/opentype.js)
+- [nostr-tools](https://github.com/nbd-wtf/nostr-tools)
+- [DOMPurify](https://github.com/cure53/DOMPurify)
+- [t-rex-runner](https://github.com/wayou/t-rex-runner)
+- [TIC-80](https://tic80.com/)
 
 ## Services
 
 - [ntp.js](http://www.ntpjs.org/)
 - [Astronomy Picture of the Day](https://apod.nasa.gov/apod/)
+- [The Old Net](https://theoldnet.com/)
+- [Wayback Machine](https://web.archive.org/)

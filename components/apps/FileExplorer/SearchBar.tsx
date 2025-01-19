@@ -1,17 +1,21 @@
+import { basename } from "path";
+import { memo, useEffect, useRef, useState } from "react";
 import { Search } from "components/apps/FileExplorer/NavigationIcons";
 import StyledSearch from "components/apps/FileExplorer/StyledSearch";
-import { TEXT_EDITORS } from "components/system/Files/FileEntry/extensions";
-import {
-  getIconByFileExtension,
-  getProcessByFileExtension,
-} from "components/system/Files/FileEntry/functions";
+import { getResultInfo } from "components/system/Taskbar/Search/functions";
+import { useFileSystem } from "contexts/fileSystem";
 import { useMenu } from "contexts/menu";
-import type { MenuItem } from "contexts/menu/useMenuContextState";
+import { type MenuItem } from "contexts/menu/useMenuContextState";
 import { useProcesses } from "contexts/process";
-import { basename, extname } from "path";
-import { useEffect, useRef, useState } from "react";
+import { useSession } from "contexts/session";
+import { SHORTCUT_EXTENSION } from "utils/constants";
 import { preloadLibs } from "utils/functions";
-import { SEARCH_LIBS, useSearch } from "utils/search";
+import {
+  FILE_INDEX,
+  SEARCH_INPUT_PROPS,
+  SEARCH_LIB,
+  useSearch,
+} from "utils/search";
 
 type SearchBarProps = {
   id: string;
@@ -31,64 +35,80 @@ const SearchBar: FC<SearchBarProps> = ({ id }) => {
   const searchBarRef = useRef<HTMLInputElement | null>(null);
   const results = useSearch(searchTerm);
   const { contextMenu } = useMenu();
+  const { fs } = useFileSystem();
+  const { updateRecentFiles } = useSession();
 
   useEffect(() => {
     if (searchBarRef.current && hasUsedSearch.current) {
-      const getItems = (): MenuItem[] =>
-        [
-          ...results.filter(({ ref: path }) => path.startsWith(url)),
-          ...results.filter(({ ref: path }) => !path.startsWith(url)),
-        ]
-          .slice(0, MAX_ENTRIES - 1)
-          .map(({ ref: path }) => ({
-            action: () => {
-              open(
-                getProcessByFileExtension(extname(path)) || TEXT_EDITORS[0],
-                { url: path }
-              );
-              setSearchTerm("");
+      const getItems = (): Promise<MenuItem[]> =>
+        Promise.all(
+          [
+            ...results.filter(({ ref: path }) => path.startsWith(url)),
+            ...results.filter(({ ref: path }) => !path.startsWith(url)),
+          ]
+            .slice(0, MAX_ENTRIES - 1)
+            .map(async ({ ref: path }) => {
+              const {
+                icon,
+                url: infoUrl,
+                pid = "",
+              } = (await getResultInfo(fs, path)) || {};
 
-              if (searchBarRef.current) {
-                searchBarRef.current.value = "";
-                searchBarRef.current.blur();
-              }
-            },
-            icon: getIconByFileExtension(extname(path)),
-            label: basename(path),
-          }));
+              return {
+                action: () => {
+                  open(pid, { url: infoUrl });
+                  setSearchTerm("");
 
-      contextMenu?.(getItems).onContextMenuCapture(
-        undefined,
-        searchBarRef.current.getBoundingClientRect()
-      );
+                  if (searchBarRef.current) {
+                    searchBarRef.current.value = "";
+                    searchBarRef.current.blur();
+                  }
+                  if (infoUrl && pid) updateRecentFiles(infoUrl, pid);
+                },
+                icon,
+                label: basename(path, SHORTCUT_EXTENSION),
+                tooltip: path,
+              };
+            })
+        );
+
+      getItems().then((items) => {
+        if (searchBarRef.current?.value || items.length === 0) {
+          const searchBarRect = searchBarRef.current?.getBoundingClientRect();
+
+          contextMenu?.(() => items).onContextMenuCapture(
+            undefined,
+            searchBarRect,
+            { staticY: (searchBarRect?.y || 0) + (searchBarRect?.height || 0) }
+          );
+        }
+      });
     }
-  }, [contextMenu, open, results, url]);
+  }, [contextMenu, fs, open, results, updateRecentFiles, url]);
 
   useEffect(() => {
     if (searchBarRef.current) {
       searchBarRef.current.value = "";
       setSearchTerm("");
     }
+    // eslint-disable-next-line react-hooks-addons/no-unused-deps
   }, [url]);
 
   return (
     <StyledSearch>
-      <Search />
       <input
         ref={searchBarRef}
-        aria-label="Search box"
-        enterKeyHint="search"
         onChange={({ target }) => {
           hasUsedSearch.current = true;
           setSearchTerm(target.value);
         }}
-        onFocus={() => preloadLibs(SEARCH_LIBS)}
+        onFocus={() => preloadLibs([SEARCH_LIB, FILE_INDEX])}
         placeholder="Search"
-        spellCheck={false}
-        type="text"
+        {...SEARCH_INPUT_PROPS}
       />
+      <Search />
     </StyledSearch>
   );
 };
 
-export default SearchBar;
+export default memo(SearchBar);

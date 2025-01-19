@@ -1,24 +1,16 @@
 import { useCallback, useRef } from "react";
 import { TRANSITIONS_IN_MILLISECONDS } from "utils/constants";
 
-const MAX_MOVES = 5;
+const MAX_MOVES = 12;
 
 const useDoubleClick = (
   handler: React.MouseEventHandler,
   singleClick = false
-): {
-  onClick: React.MouseEventHandler;
-  onDoubleClick: React.MouseEventHandler;
-} => {
-  const timer = useRef<number | undefined>();
+): { onClick: React.MouseEventHandler } => {
+  const timer = useRef(0);
   const moveCount = useRef(0);
   const onClick: React.MouseEventHandler = useCallback(
     (event) => {
-      const mouseEvent = event.clientX || event.clientY;
-      const doubleClickEvent = event.type === "dblclick";
-
-      if (!mouseEvent && !doubleClickEvent) return;
-
       const runHandler = (): void => {
         event.stopPropagation();
         handler(event);
@@ -26,7 +18,7 @@ const useDoubleClick = (
       const clearTimer = (): void => {
         if (timer.current) {
           clearTimeout(timer.current);
-          timer.current = undefined;
+          timer.current = 0;
         }
       };
       const clearWhenPointerMoved = (): void => {
@@ -34,7 +26,7 @@ const useDoubleClick = (
           clearTimer();
         }
 
-        if (timer.current === undefined) {
+        if (timer.current === 0) {
           event.target.removeEventListener(
             "pointermove",
             clearWhenPointerMoved
@@ -45,12 +37,9 @@ const useDoubleClick = (
         }
       };
 
-      if (
-        (singleClick && !doubleClickEvent) ||
-        (!mouseEvent && doubleClickEvent)
-      ) {
+      if (singleClick) {
         runHandler();
-      } else if (timer.current === undefined) {
+      } else if (timer.current === 0) {
         timer.current = window.setTimeout(
           clearTimer,
           TRANSITIONS_IN_MILLISECONDS.DOUBLE_CLICK
@@ -66,7 +55,7 @@ const useDoubleClick = (
     [handler, singleClick]
   );
 
-  return { onClick, onDoubleClick: onClick };
+  return { onClick };
 };
 
 export default useDoubleClick;

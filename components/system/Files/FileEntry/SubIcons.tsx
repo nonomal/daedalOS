@@ -1,61 +1,92 @@
-import type { FileManagerViewNames } from "components/system/Files/Views";
-import { FileEntryIconSize } from "components/system/Files/Views";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
+import {
+  type FileManagerViewNames,
+  FileEntryIconSize,
+} from "components/system/Files/Views";
 import Icon from "styles/common/Icon";
 import {
   FOLDER_BACK_ICON,
   FOLDER_FRONT_ICON,
+  ICON_CACHE,
   SHORTCUT_ICON,
+  YT_ICON_CACHE,
 } from "utils/constants";
 
 type IconProps = {
+  alt: string;
   icon: string;
-  name: string;
   view: FileManagerViewNames;
 };
 
-type SubIconProps = IconProps & {
-  baseIcon: string;
-  isFirstImage: boolean;
-  totalSubIcons: number;
+type SharedSubIconProps = {
+  imgSize?: 64 | 32 | 16 | 8;
+  isDesktop?: boolean;
 };
 
-type SubIconsProps = IconProps & {
-  showShortcutIcon: boolean;
-  subIcons?: string[];
-};
+type SubIconProps = SharedSubIconProps &
+  IconProps & {
+    baseIcon: string;
+    isFirstImage: boolean;
+    totalSubIcons: number;
+  };
+
+type SubIconsProps = SharedSubIconProps &
+  IconProps & {
+    showShortcutIcon: boolean;
+    subIcons?: string[];
+  };
 
 const WIDE_IMAGE_TRANSFORM = "matrix(0.5, 0.05, 0, 0.7, 2, 1)";
+const WIDE_IMAGE_TRANSFORM_16 = "matrix(0.5, 0.05, 0, 0.8, 3.5, 2)";
 const SHORT_IMAGE_TRANSFORM = "matrix(0.4, 0.14, 0, 0.7, -4, 2)";
+const SHORT_IMAGE_TRANSFORM_16 = "matrix(0.4, 0.14, 0, 0.8, -0.5, 2)";
 
 const SubIcon: FC<SubIconProps> = ({
   baseIcon,
   icon,
+  imgSize,
+  isDesktop,
   isFirstImage,
-  name,
+  alt,
   totalSubIcons,
   view,
 }) => {
-  const iconView = useMemo(
-    () =>
-      FileEntryIconSize[
-        ![SHORTCUT_ICON, FOLDER_FRONT_ICON].includes(icon) &&
-        !icon.startsWith("blob:")
-          ? "sub"
-          : view
-      ],
-    [icon, view]
-  );
+  const iconView = useMemo(() => {
+    const isSub =
+      ![SHORTCUT_ICON, FOLDER_FRONT_ICON].includes(icon) &&
+      !icon.startsWith("blob:") &&
+      !icon.startsWith(ICON_CACHE) &&
+      !icon.startsWith(YT_ICON_CACHE);
+
+    if (icon === SHORTCUT_ICON && view === "details") {
+      return {
+        displaySize: 16,
+        imgSize: 48,
+      };
+    }
+
+    return FileEntryIconSize[
+      isSub ? (view === "details" ? "detailsSub" : "sub") : view
+    ];
+  }, [icon, view]);
+
   const style = useMemo((): React.CSSProperties | undefined => {
     if (icon === FOLDER_FRONT_ICON) return { zIndex: 3 };
 
     if (baseIcon === FOLDER_BACK_ICON) {
       const hasMultipleSubIcons = totalSubIcons - 1 > 1;
+      const isSmallImage = imgSize === 16;
+      const shortTransform = isSmallImage
+        ? SHORT_IMAGE_TRANSFORM_16
+        : SHORT_IMAGE_TRANSFORM;
+      const wideTransform = isSmallImage
+        ? WIDE_IMAGE_TRANSFORM_16
+        : WIDE_IMAGE_TRANSFORM;
       const transform = isFirstImage
         ? hasMultipleSubIcons
-          ? SHORT_IMAGE_TRANSFORM
-          : WIDE_IMAGE_TRANSFORM
-        : WIDE_IMAGE_TRANSFORM;
+          ? shortTransform
+          : wideTransform
+        : wideTransform;
 
       return {
         objectFit: "cover",
@@ -65,12 +96,12 @@ const SubIcon: FC<SubIconProps> = ({
     }
 
     return undefined;
-  }, [baseIcon, icon, isFirstImage, totalSubIcons]);
+  }, [baseIcon, icon, imgSize, isFirstImage, totalSubIcons]);
 
   return (
     <Icon
-      $eager={icon === SHORTCUT_ICON}
-      alt={name}
+      $eager={isDesktop || icon === SHORTCUT_ICON}
+      alt={alt}
       src={icon}
       style={style}
       {...iconView}
@@ -78,9 +109,13 @@ const SubIcon: FC<SubIconProps> = ({
   );
 };
 
+const MemoizedSubIcon = memo(SubIcon);
+
 const SubIcons: FC<SubIconsProps> = ({
+  alt,
   icon,
-  name,
+  imgSize,
+  isDesktop,
   showShortcutIcon,
   subIcons,
   view,
@@ -92,20 +127,31 @@ const SubIcons: FC<SubIconsProps> = ({
         : subIcons,
     [showShortcutIcon, subIcons]
   );
-  const filteredSubIcons = useMemo(
-    () => icons?.filter((subIcon) => subIcon !== icon) || [],
-    [icon, icons]
-  );
+  const filteredSubIcons = useMemo(() => {
+    const iconsLength = icons?.length;
+
+    if (
+      iconsLength &&
+      view === "details" &&
+      icons[iconsLength - 1] === FOLDER_FRONT_ICON
+    ) {
+      return [];
+    }
+
+    return icons?.filter((subIcon) => subIcon !== icon) || [];
+  }, [icon, icons, view]);
 
   return (
     <>
       {filteredSubIcons.map((entryIcon, subIconIndex) => (
-        <SubIcon
+        <MemoizedSubIcon
           key={entryIcon}
+          alt={alt}
           baseIcon={icon}
           icon={entryIcon}
+          imgSize={imgSize}
+          isDesktop={isDesktop}
           isFirstImage={subIconIndex === 0}
-          name={name}
           totalSubIcons={filteredSubIcons.length}
           view={view}
         />
@@ -114,4 +160,4 @@ const SubIcons: FC<SubIconsProps> = ({
   );
 };
 
-export default SubIcons;
+export default memo(SubIcons);

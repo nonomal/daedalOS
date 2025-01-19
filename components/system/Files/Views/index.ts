@@ -1,32 +1,40 @@
+import StyledDetailsFileEntry from "components/system/Files/Views/Details/StyledFileEntry";
+import StyledDetailsFileManager from "components/system/Files/Views/Details/StyledFileManager";
 import StyledIconFileEntry from "components/system/Files/Views/Icon/StyledFileEntry";
 import StyledIconFileManager from "components/system/Files/Views/Icon/StyledFileManager";
 import StyledListFileEntry from "components/system/Files/Views/List/StyledFileEntry";
 import StyledListFileManager from "components/system/Files/Views/List/StyledFileManager";
-import type { DefaultTheme, StyledComponent } from "styled-components";
-import type { IconProps } from "styles/common/Icon";
+import { type IconProps } from "styles/common/Icon";
 
 export type StyledFileEntryProps = {
+  $desktop?: boolean;
   $selecting?: boolean;
   $visible?: boolean;
 };
 
 export type StyledFileManagerProps = {
+  $isEmptyFolder: boolean;
   $scrollable: boolean;
   $selecting?: boolean;
 };
 
 type FileManagerView = {
-  StyledFileEntry: StyledComponent<"li", DefaultTheme, StyledFileEntryProps>;
-  StyledFileManager: StyledComponent<
-    "ol",
-    DefaultTheme,
-    StyledFileManagerProps
-  >;
+  StyledFileEntry: typeof StyledIconFileEntry | typeof StyledListFileEntry;
+  /* eslint-disable @typescript-eslint/no-duplicate-type-constituents */
+  StyledFileManager:
+    | typeof StyledDetailsFileManager
+    | typeof StyledIconFileManager
+    | typeof StyledListFileManager;
+  /* eslint-enable @typescript-eslint/no-duplicate-type-constituents */
 };
 
-export type FileManagerViewNames = "icon" | "list";
+export type FileManagerViewNames = "details" | "icon" | "list";
 
 export const FileManagerViews: Record<FileManagerViewNames, FileManagerView> = {
+  details: {
+    StyledFileEntry: StyledDetailsFileEntry,
+    StyledFileManager: StyledDetailsFileManager,
+  },
   icon: {
     StyledFileEntry: StyledIconFileEntry,
     StyledFileManager: StyledIconFileManager,
@@ -38,9 +46,16 @@ export const FileManagerViews: Record<FileManagerViewNames, FileManagerView> = {
 };
 
 export const FileEntryIconSize: Record<
-  FileManagerViewNames | "sub",
+  FileManagerViewNames | "detailsSub" | "sub",
   IconProps
 > = {
+  details: {
+    imgSize: 16,
+  },
+  detailsSub: {
+    displaySize: 8,
+    imgSize: 16,
+  },
   icon: {
     imgSize: 48,
   },

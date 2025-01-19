@@ -1,23 +1,29 @@
+import { basename } from "path";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  config,
   CONTROL_BAR_HEIGHT,
-  getMimeType,
+  DEFAULT_QUALITY_SIZE,
   VideoResizeKey,
   YT_TYPE,
+  config,
+  ytQualitySizeMap,
 } from "components/apps/VideoPlayer/config";
-import type {
-  SourceObjectWithUrl,
-  VideoPlayer,
+import {
+  type YouTubeTech,
+  type SourceObjectWithUrl,
+  type VideoPlayer,
+  type YouTubePlayer,
 } from "components/apps/VideoPlayer/types";
+import { type ContainerHookProps } from "components/system/Apps/AppContainer";
 import useTitle from "components/system/Window/useTitle";
 import useWindowSize from "components/system/Window/useWindowSize";
 import { useFileSystem } from "contexts/fileSystem";
 import { useProcesses } from "contexts/process";
-import { basename } from "path";
-import { useCallback, useEffect, useState } from "react";
+import { VIDEO_FALLBACK_MIME_TYPE } from "utils/constants";
 import {
   bufferToUrl,
   cleanUpBufferUrl,
+  getMimeType,
   isSafari,
   isYouTubeUrl,
   loadFiles,
@@ -25,20 +31,22 @@ import {
   viewWidth,
 } from "utils/functions";
 
-const useVideoPlayer = (
-  id: string,
-  url: string,
-  containerRef: React.MutableRefObject<HTMLDivElement | null>,
-  setLoading: React.Dispatch<React.SetStateAction<boolean>>,
-  loading: boolean
-): void => {
+const useVideoPlayer = ({
+  containerRef,
+  id,
+  loading,
+  setLoading,
+  url,
+}: ContainerHookProps): void => {
   const { readFile } = useFileSystem();
   const {
+    argument,
     linkElement,
     processes: { [id]: { closing = false, libs = [] } = {} },
   } = useProcesses();
   const { updateWindowSize } = useWindowSize(id);
   const [player, setPlayer] = useState<VideoPlayer>();
+  const [ytPlayer, setYtPlayer] = useState<YouTubePlayer>();
   const { prependFileToTitle } = useTitle(id);
   const cleanUpSource = useCallback((): void => {
     const { src: sources = [] } = player?.getMedia() || {};
@@ -51,33 +59,47 @@ const useVideoPlayer = (
       }
     }
   }, [closing, player, url]);
+  const isYT = useMemo(() => isYouTubeUrl(url), [url]);
   const getSource = useCallback(async () => {
     cleanUpSource();
 
-    const isYT = isYouTubeUrl(url);
-    const type = isYT ? YT_TYPE : getMimeType(url);
+    const type = isYT ? YT_TYPE : getMimeType(url) || VIDEO_FALLBACK_MIME_TYPE;
     const src = isYT
       ? url
       : bufferToUrl(await readFile(url), isSafari() ? type : undefined);
 
     return { src, type, url };
-  }, [cleanUpSource, readFile, url]);
+  }, [cleanUpSource, isYT, readFile, url]);
+  const initializedUrlRef = useRef(false);
   const loadPlayer = useCallback(() => {
     const [videoElement] =
       (containerRef.current?.childNodes as NodeListOf<HTMLVideoElement>) ?? [];
     const videoPlayer = window.videojs(videoElement, config, () => {
-      videoPlayer.on("firstplay", () => {
-        const [height, width] = [
-          videoPlayer.videoHeight(),
-          videoPlayer.videoWidth(),
-        ];
+      videoPlayer.on("play", () => {
+        if (initializedUrlRef.current) return;
+
+        initializedUrlRef.current = true;
+
+        const { ytPlayer: youTubePlayer } =
+          (videoPlayer as YouTubeTech).tech_ || {};
+
+        if (youTubePlayer) setYtPlayer(youTubePlayer);
+
+        const [height, width] = youTubePlayer
+          ? ytQualitySizeMap[youTubePlayer.getPlaybackQuality()] ||
+            DEFAULT_QUALITY_SIZE
+          : [videoPlayer.videoHeight(), videoPlayer.videoWidth()];
         const [vh, vw] = [viewHeight(), viewWidth()];
 
         if (height && width) {
-          const heightWithControlBar = CONTROL_BAR_HEIGHT + height;
+          const heightWithControlBar =
+            height + (youTubePlayer ? 0 : CONTROL_BAR_HEIGHT);
 
           if (heightWithControlBar > vh || width > vw) {
-            updateWindowSize(vw * (heightWithControlBar / width), vw);
+            updateWindowSize(
+              Math.floor(vw * (heightWithControlBar / width)),
+              Math.min(width, vw)
+            );
           } else {
             updateWindowSize(heightWithControlBar, width);
           }
@@ -93,11 +115,16 @@ const useVideoPlayer = (
       };
 
       videoElement.addEventListener("dblclick", toggleFullscreen);
-      videoElement.addEventListener("mousewheel", (event) => {
-        videoPlayer.volume(
-          videoPlayer.volume() + ((event as WheelEvent).deltaY > 0 ? -0.1 : 0.1)
-        );
-      });
+      videoElement.addEventListener(
+        "mousewheel",
+        (event) => {
+          videoPlayer.volume(
+            videoPlayer.volume() +
+              ((event as WheelEvent).deltaY > 0 ? -0.1 : 0.1)
+          );
+        },
+        { passive: true }
+      );
       containerRef.current
         ?.closest("section")
         ?.addEventListener("keydown", ({ key, altKey, ctrlKey }) => {
@@ -134,24 +161,71 @@ const useVideoPlayer = (
         });
       setPlayer(videoPlayer);
       setLoading(false);
-      if (!isYouTubeUrl(url)) linkElement(id, "peekElement", videoElement);
+      if (!isYT) linkElement(id, "peekElement", videoElement);
+      argument(id, "play", () => videoPlayer.play());
+      argument(id, "pause", () => videoPlayer.pause());
+      argument(id, "paused", (callback?: (paused: boolean) => void) => {
+        if (callback) {
+          videoPlayer.on("pause", () => callback(true));
+          videoPlayer.on("play", () => callback(false));
+        }
+
+        return videoPlayer.paused();
+      });
     });
-  }, [containerRef, id, linkElement, setLoading, updateWindowSize, url]);
+  }, [
+    argument,
+    containerRef,
+    id,
+    isYT,
+    linkElement,
+    setLoading,
+    updateWindowSize,
+  ]);
+  const maybeHideControlbar = useCallback(
+    (type?: string): void => {
+      const controlBar =
+        containerRef.current?.querySelector(".vjs-control-bar");
+
+      if (controlBar instanceof HTMLElement) {
+        if (type === YT_TYPE) {
+          controlBar.classList.add("no-interaction");
+        } else {
+          controlBar.classList.remove("no-interaction");
+        }
+      }
+    },
+    [containerRef]
+  );
   const loadVideo = useCallback(async () => {
     if (player && url) {
       try {
-        player.src(await getSource());
-        prependFileToTitle(isYouTubeUrl(url) ? "YouTube" : basename(url));
+        const source = await getSource();
+
+        initializedUrlRef.current = false;
+        player.src(source);
+        maybeHideControlbar(source.type);
+        prependFileToTitle(
+          isYT ? ytPlayer?.videoTitle || "YouTube" : basename(url)
+        );
       } catch {
         // Ignore player errors
       }
     }
-  }, [getSource, player, prependFileToTitle, url]);
+  }, [
+    getSource,
+    isYT,
+    maybeHideControlbar,
+    player,
+    prependFileToTitle,
+    url,
+    ytPlayer,
+  ]);
 
   useEffect(() => {
     if (loading && !player) {
       loadFiles(libs).then(() => {
-        if (window.videojs !== undefined) {
+        if (typeof window.videojs === "function") {
           loadPlayer();
         }
       });

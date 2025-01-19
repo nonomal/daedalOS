@@ -1,9 +1,13 @@
 import styled from "styled-components";
+import Message from "styles/common/Message";
 
 const StyledOpenType = styled.div`
   font-size: 13px;
-  overflow-y: scroll;
-  overflow-x: hidden;
+  overflow: hidden auto;
+
+  &.drop {
+    ${Message("Drop OTF/TTF/WOFF file here", "#000")};
+  }
 
   ol {
     &:not(:last-child) {

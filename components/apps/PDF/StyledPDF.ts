@@ -1,6 +1,10 @@
 import styled from "styled-components";
+import Message from "styles/common/Message";
+import ScrollBars from "styles/common/ScrollBars";
 
 const StyledPDF = styled.div`
+  ${ScrollBars()};
+
   display: block;
   overflow: auto;
   position: relative;
@@ -15,6 +19,10 @@ const StyledPDF = styled.div`
   canvas {
     box-shadow: 0 0 5px hsla(0, 0%, 10%, 50%);
     margin: 4px 4px 0;
+  }
+
+  &.drop {
+    ${Message("Drop PDF file here", "#fff")};
   }
 `;
 

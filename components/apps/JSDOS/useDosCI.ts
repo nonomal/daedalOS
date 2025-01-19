@@ -1,3 +1,7 @@
+import { basename, join } from "path";
+import { useCallback, useEffect, useState } from "react";
+import { type DosInstance } from "emulators-ui/dist/types/js-dos";
+import { type CommandInterface } from "emulators";
 import {
   globals,
   saveExtension,
@@ -6,22 +10,15 @@ import {
 import useTitle from "components/system/Window/useTitle";
 import { useFileSystem } from "contexts/fileSystem";
 import { useProcesses } from "contexts/process";
-import type { CommandInterface } from "emulators";
-import type { DosInstance } from "emulators-ui/dist/types/js-dos";
-import { basename, dirname, extname, join } from "path";
-import { useCallback, useEffect, useState } from "react";
-import {
-  ICON_CACHE,
-  ICON_CACHE_EXTENSION,
-  SAVE_PATH,
-  TRANSITIONS_IN_MILLISECONDS,
-} from "utils/constants";
+import { SAVE_PATH, TRANSITIONS_IN_MILLISECONDS } from "utils/constants";
 import {
   bufferToUrl,
   cleanUpBufferUrl,
+  getExtension,
   imgDataToBuffer,
 } from "utils/functions";
 import { cleanUpGlobals } from "utils/globals";
+import { useSnapshots } from "hooks/useSnapshots";
 
 const addJsDosConfig = async (
   buffer: Buffer,
@@ -44,12 +41,11 @@ const addJsDosConfig = async (
 const useDosCI = (
   id: string,
   url: string,
-  containerRef: React.MutableRefObject<HTMLDivElement | null>,
+  containerRef: React.RefObject<HTMLDivElement | null>,
   dosInstance?: DosInstance
 ): CommandInterface | undefined => {
   const { appendFileToTitle } = useTitle(id);
-  const { exists, mkdirRecursive, readFile, updateFolder, writeFile } =
-    useFileSystem();
+  const { exists, readFile } = useFileSystem();
   const {
     linkElement,
     processes: { [id]: process },
@@ -58,63 +54,65 @@ const useDosCI = (
   const [dosCI, setDosCI] = useState<
     Record<string, CommandInterface | undefined>
   >({});
+  const { createSnapshot } = useSnapshots();
   const closeBundle = useCallback(
     async (bundleUrl: string, screenshot?: Buffer, closeInstance = false) => {
-      const saveName = `${basename(bundleUrl)}${saveExtension}`;
-
-      if (!(await exists(SAVE_PATH))) {
-        await mkdirRecursive(SAVE_PATH);
-        updateFolder(dirname(SAVE_PATH));
+      if (dosCI[bundleUrl]) {
+        await createSnapshot(
+          `${basename(bundleUrl)}${saveExtension}`,
+          Buffer.from((await dosCI[bundleUrl].persist()) || []),
+          screenshot
+        );
       }
 
-      const savePath = join(SAVE_PATH, saveName);
-
-      if (
-        dosCI[bundleUrl] !== undefined &&
-        (await writeFile(
-          savePath,
-          Buffer.from(await (dosCI[bundleUrl] as CommandInterface).persist()),
-          true
-        ))
-      ) {
-        if (screenshot) {
-          const iconCacheRootPath = join(ICON_CACHE, SAVE_PATH);
-          const iconCachePath = join(
-            ICON_CACHE,
-            `${savePath}${ICON_CACHE_EXTENSION}`
-          );
-
-          if (!(await exists(iconCacheRootPath))) {
-            await mkdirRecursive(iconCacheRootPath);
-            updateFolder(dirname(SAVE_PATH));
-          }
-
-          await writeFile(iconCachePath, screenshot, true);
+      if (closeInstance) {
+        try {
+          await dosInstance?.stop();
+          await dosCI[bundleUrl]?.exit();
+        } catch {
+          // Ignore errors during closing
         }
-
-        if (closeInstance) dosInstance?.stop();
-        updateFolder(SAVE_PATH, saveName);
       }
     },
-    [dosCI, dosInstance, exists, mkdirRecursive, updateFolder, writeFile]
+    [createSnapshot, dosCI, dosInstance]
+  );
+  const takeScreenshot = useCallback(
+    async (fileUrl: string): Promise<Buffer | undefined> => {
+      const imageData = await dosCI[fileUrl]?.screenshot();
+
+      return imageData ? imgDataToBuffer(imageData) : undefined;
+    },
+    [dosCI]
   );
   const loadBundle = useCallback(async () => {
     const [currentUrl] = Object.keys(dosCI);
 
-    if (currentUrl) closeBundle(currentUrl);
+    if (typeof currentUrl === "string") {
+      await closeBundle(currentUrl, await takeScreenshot(currentUrl));
+      setDosCI({ [url]: undefined });
+    }
 
     const urlBuffer = url ? await readFile(url) : Buffer.from("");
-    const extension = extname(url).toLowerCase();
+    const extension = getExtension(url);
     const { zipAsync } = await import("utils/zipFunctions");
+    const zippedPayload = async (buffer: Buffer): Promise<Buffer> =>
+      Buffer.from(await zipAsync({ [basename(url)]: buffer }));
+    const zipBufferToUrl = async (buffer: Buffer): Promise<string> =>
+      bufferToUrl(await addJsDosConfig(buffer, readFile));
     const zipBuffer =
-      extension === ".exe"
-        ? Buffer.from(await zipAsync({ [basename(url)]: urlBuffer }))
-        : urlBuffer;
-    const bundleURL = bufferToUrl(
-      extension === ".jsdos"
-        ? zipBuffer
-        : await addJsDosConfig(zipBuffer, readFile)
-    );
+      extension === ".exe" ? await zippedPayload(urlBuffer) : urlBuffer;
+    let bundleURL: string;
+
+    if (extension === ".jsdos") {
+      bundleURL = bufferToUrl(zipBuffer);
+    } else {
+      try {
+        bundleURL = await zipBufferToUrl(zipBuffer);
+      } catch {
+        bundleURL = await zipBufferToUrl(await zippedPayload(urlBuffer));
+      }
+    }
+
     const savePath = join(SAVE_PATH, `${basename(url)}${saveExtension}`);
     const stateUrl = (await exists(savePath))
       ? bufferToUrl(await readFile(savePath))
@@ -143,33 +141,41 @@ const useDosCI = (
     id,
     linkElement,
     readFile,
+    takeScreenshot,
     url,
   ]);
 
   useEffect(() => {
     if (process && !closing && dosInstance && !(url in dosCI)) {
-      setDosCI({ [url]: undefined });
       loadBundle();
     }
 
     return () => {
-      if (url && closing) {
-        const takeScreenshot = async (): Promise<Buffer | undefined> => {
-          const imageData = await dosCI[url]?.screenshot();
+      if (closing) {
+        if (url) {
+          const scheduleSaveState = (screenshot?: Buffer): void => {
+            window.setTimeout(
+              () => closeBundle(url, screenshot, closing),
+              TRANSITIONS_IN_MILLISECONDS.WINDOW
+            );
+          };
 
-          return imageData ? imgDataToBuffer(imageData) : undefined;
-        };
-        const scheduleSaveState = (screenshot?: Buffer): void => {
-          window.setTimeout(
-            () => closeBundle(url, screenshot, closing),
-            TRANSITIONS_IN_MILLISECONDS.WINDOW
-          );
-        };
-
-        takeScreenshot().then(scheduleSaveState).catch(scheduleSaveState);
+          takeScreenshot(url).then(scheduleSaveState).catch(scheduleSaveState);
+        } else {
+          dosInstance?.stop();
+        }
       }
     };
-  }, [closeBundle, closing, dosCI, dosInstance, loadBundle, process, url]);
+  }, [
+    closeBundle,
+    closing,
+    dosCI,
+    dosInstance,
+    loadBundle,
+    process,
+    takeScreenshot,
+    url,
+  ]);
 
   return dosCI[url];
 };

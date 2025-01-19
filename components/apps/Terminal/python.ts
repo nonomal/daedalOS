@@ -1,7 +1,12 @@
-import type { LocalEcho } from "components/apps/Terminal/types";
 import { loadFiles } from "utils/functions";
 
 type Pyodide = {
+  loadPackage: (
+    name: string,
+    options: {
+      checkIntegrity?: boolean;
+    }
+  ) => Promise<void>;
   runPythonAsync: (code: string) => Promise<string>;
 };
 
@@ -26,7 +31,7 @@ const captureStdOut =
 
 export const runPython = async (
   code: string,
-  localEcho: LocalEcho
+  printLn: (message: string) => void
 ): Promise<void> => {
   await loadFiles(["/Program Files/Pyodide/pyodide.js"]);
 
@@ -38,6 +43,10 @@ export const runPython = async (
     const getVersion = code === "ver" || code === "version";
 
     try {
+      if (code.includes("import micropip")) {
+        await window.pyodide.loadPackage("micropip", { checkIntegrity: false });
+      }
+
       let result = await window.pyodide.runPythonAsync(
         getVersion ? versionCommand : captureStdOut + code
       );
@@ -46,11 +55,11 @@ export const runPython = async (
         result = await window.pyodide.runPythonAsync("sys.stdout.getvalue()");
       }
 
-      if (result) localEcho?.println(result.toString());
+      if (result) printLn(result.toString());
     } catch (error) {
       const { message } = error as PyError;
 
-      if (message) localEcho?.println(message);
+      if (message) printLn(message);
     }
   }
 };

@@ -1,11 +1,11 @@
-/**
- * Functional Component
- */
+type FC<T = Record<string, unknown>> = (
+  props: React.PropsWithChildren<T>
+) => React.JSX.Element | null;
 
-type FC<TProps = Record<string, unknown>> = (
-  props: React.PropsWithChildren<TProps>
-) => JSX.Element | null;
+type FCWithRef<R = HTMLElement, T = Record<string, unknown>> = (
+  props: React.PropsWithChildren<T> & { ref?: React.RefObject<R | null> }
+) => React.JSX.Element | null;
 
-type HTMLElementWithPriority<T> = T & {
-  fetchPriority?: "auto" | "high" | "low";
-};
+declare module "utif" {
+  export const bufferToURI: (data: Buffer) => string;
+}

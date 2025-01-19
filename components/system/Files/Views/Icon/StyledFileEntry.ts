@@ -1,26 +1,11 @@
-import type { StyledFileEntryProps } from "components/system/Files/Views";
 import styled from "styled-components";
+import { type StyledFileEntryProps } from "components/system/Files/Views";
 
 const StyledFileEntry = styled.li<StyledFileEntryProps>`
   display: ${({ $visible }) => ($visible ? "flex" : "none")};
   height: min-content;
+  outline-offset: -2px;
   padding: 2px;
-
-  &.focus-within,
-  &:hover {
-    border: 2px solid transparent;
-    padding: 0;
-    position: relative;
-
-    &::before {
-      bottom: -1px;
-      content: "";
-      left: -1px;
-      position: absolute;
-      right: -1px;
-      top: -1px;
-    }
-  }
 
   button {
     position: relative;
@@ -36,9 +21,15 @@ const StyledFileEntry = styled.li<StyledFileEntryProps>`
         font-size: ${({ theme }) => theme.sizes.fileEntry.fontSize};
         line-height: 1.2;
         margin: 1px 0;
-        padding: 2px;
-        text-shadow: ${({ theme }) => theme.colors.fileEntry.textShadow};
-        word-break: break-word;
+        overflow-wrap: anywhere;
+        padding: 2px 0;
+        text-shadow: ${({ $desktop, theme }) =>
+          $desktop ? theme.colors.fileEntry.textShadow : undefined};
+
+        @supports not (overflow-wrap: anywhere) {
+          /* stylelint-disable declaration-property-value-keyword-no-deprecated */
+          word-break: break-word;
+        }
       }
 
       picture {
@@ -58,24 +49,21 @@ const StyledFileEntry = styled.li<StyledFileEntryProps>`
 
   &:hover {
     background-color: ${({ theme }) => theme.colors.fileEntry.background};
-
-    &::before {
-      border: ${({ theme }) => `1px solid ${theme.colors.fileEntry.border}`};
-    }
+    outline: ${({ $desktop, theme }) =>
+      $desktop ? `1px solid ${theme.colors.fileEntry.border}` : undefined};
   }
 
   &.focus-within {
     background-color: ${({ theme }) =>
       theme.colors.fileEntry.backgroundFocused};
+    outline: ${({ $desktop, theme }) =>
+      $desktop
+        ? `1px solid ${theme.colors.fileEntry.borderFocused}`
+        : undefined};
     z-index: 1;
 
     &.only-focused {
       margin-bottom: -1000px;
-    }
-
-    &::before {
-      border: ${({ theme }) =>
-        `1px solid ${theme.colors.fileEntry.borderFocused}`};
     }
 
     &:hover {
@@ -83,11 +71,10 @@ const StyledFileEntry = styled.li<StyledFileEntryProps>`
         $selecting
           ? theme.colors.fileEntry.backgroundFocused
           : theme.colors.fileEntry.backgroundFocusedHover};
-
-      &::before {
-        border: ${({ theme }) =>
-          `1px solid ${theme.colors.fileEntry.borderFocusedHover}`};
-      }
+      outline: ${({ $desktop, theme }) =>
+        $desktop
+          ? `1px solid ${theme.colors.fileEntry.borderFocusedHover}`
+          : undefined};
     }
   }
 `;

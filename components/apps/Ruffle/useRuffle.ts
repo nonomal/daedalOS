@@ -1,52 +1,89 @@
-import type { RufflePlayer } from "components/apps/Ruffle/types";
+import { basename, extname } from "path";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { type RufflePlayer } from "components/apps/Ruffle/types";
+import { type ContainerHookProps } from "components/system/Apps/AppContainer";
 import useTitle from "components/system/Window/useTitle";
 import { useFileSystem } from "contexts/fileSystem";
 import { useProcesses } from "contexts/process";
-import { basename, extname } from "path";
-import { useCallback, useEffect, useState } from "react";
 import { loadFiles } from "utils/functions";
 
-const useRuffle = (
-  id: string,
-  url: string,
-  containerRef: React.MutableRefObject<HTMLDivElement | null>,
-  setLoading: React.Dispatch<React.SetStateAction<boolean>>
-): void => {
-  const { processes: { [id]: { libs = [] } = {} } = {} } = useProcesses();
+const useRuffle = ({
+  containerRef,
+  id,
+  setLoading,
+  url,
+}: ContainerHookProps): void => {
+  const {
+    argument,
+    linkElement,
+    processes: { [id]: { libs = [] } = {} } = {},
+  } = useProcesses();
   const [player, setPlayer] = useState<RufflePlayer>();
+  const eventTarget = useRef(new EventTarget());
   const { appendFileToTitle } = useTitle(id);
   const { readFile } = useFileSystem();
   const loadFlash = useCallback(async () => {
     containerRef.current?.classList.remove("drop");
-    await player?.load({ data: await readFile(url) });
+
+    try {
+      await player?.load({ data: await readFile(url) });
+    } catch {
+      // Ruffle handles error reporting
+    } finally {
+      setLoading(false);
+    }
+
     appendFileToTitle(basename(url, extname(url)));
-  }, [appendFileToTitle, containerRef, player, readFile, url]);
+  }, [appendFileToTitle, containerRef, player, readFile, setLoading, url]);
 
   useEffect(() => {
     loadFiles(libs).then(() => {
       if (window.RufflePlayer) {
         window.RufflePlayer.config = {
           allowScriptAccess: false,
-          autoplay: true,
+          autoplay: "on",
           backgroundColor: "#000000",
           letterbox: "on",
+          menu: false,
           polyfills: false,
           preloader: false,
+          unmuteOverlay: "hidden",
         };
+
         setPlayer(window.RufflePlayer.newest().createPlayer());
-        if (!url) containerRef.current?.classList.add("drop");
+
+        if (!url) {
+          containerRef.current?.classList.add("drop");
+          setLoading(false);
+        }
       }
     });
-  }, [containerRef, libs, url]);
+  }, [containerRef, libs, setLoading, url]);
 
   useEffect(() => {
     if (containerRef.current && player) {
       containerRef.current.append(player);
-      setLoading(false);
+      linkElement(id, "peekElement", player);
+      argument(id, "play", () => {
+        player.play();
+        eventTarget.current.dispatchEvent(new Event("play"));
+      });
+      argument(id, "pause", () => {
+        player.pause();
+        eventTarget.current.dispatchEvent(new Event("pause"));
+      });
+      argument(id, "paused", (callback?: (paused: boolean) => void) => {
+        if (callback) {
+          eventTarget.current.addEventListener("pause", () => callback(true));
+          eventTarget.current.addEventListener("play", () => callback(false));
+        }
+
+        return !player.isPlaying;
+      });
     }
 
     return () => player?.remove();
-  }, [containerRef, player, setLoading]);
+  }, [argument, containerRef, id, linkElement, player]);
 
   useEffect(() => {
     if (containerRef.current && player && url) loadFlash();

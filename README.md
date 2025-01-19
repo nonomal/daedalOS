@@ -2,52 +2,7 @@
 
 ## _Desktop environment in the browser_
 
-# Feature Overview
-
-[![Feature Overview](https://img.youtube.com/vi/CkvKPspIPLs/mqdefault.jpg)](http://www.youtube.com/watch?v=CkvKPspIPLs)
-
-# Try It 🏁
-
-### Clone repo
-
-- [Git](https://git-scm.com/downloads)
-
-```
-git clone https://github.com/DustinBrett/daedalOS.git
-cd daedalOS
-```
-
-### Yarn
-
-- [Node.js](https://nodejs.org/en/download/) (**v16**)
-- [Yarn](https://classic.yarnpkg.com/en/) (`npm install --global yarn`)
-
-```
-yarn
-```
-
-##### Development
-
-```
-yarn build:fs
-yarn dev
-```
-
-##### Production
-
-```
-yarn build
-yarn start
-```
-
-### Docker
-
-- [Docker Desktop](https://www.docker.com/products/docker-desktop)
-
-```
-docker build -t daedalos .
-docker run -dp 3000:3000 --rm --name daedalos daedalos
-```
+[![Feature Overview](https://img.youtube.com/vi/RRLq3T0Surs/mqdefault.jpg)](http://www.youtube.com/watch?v=RRLq3T0Surs)
 
 # System 🧠
 
@@ -55,17 +10,18 @@ docker run -dp 3000:3000 --rm --name daedalos daedalos
 
 - File Explorer
   - Back, Forward, Recent locations, Up one level, Address bar, Search
+  - Thumbnail & Details Views
 - [Drag & Drop](https://developer.mozilla.org/en-US/docs/Web/API/HTML_Drag_and_Drop_API) File Support (internal & external)
   - Loading progress dialog
-- ZIP ([write support](https://www.npmjs.com/package/fflate)), [ZIP](https://github.com/jvilk/BrowserFS/blob/master/src/backend/ZipFS.ts)/[ISO](https://github.com/jvilk/BrowserFS/blob/master/src/backend/IsoFS.ts) read support, [7Z/GZ/RAR/TAR/etc. extract](https://github.com/use-strict/7z-wasm) support
+- ZIP ([write support](https://www.npmjs.com/package/fflate)), [ZIP](https://github.com/jvilk/BrowserFS/blob/master/src/backends/ZipFS.ts)/[ISO](https://github.com/jvilk/BrowserFS/blob/master/src/backends/IsoFS.ts) read support, [7Z/GZ/RAR/TAR/etc. extract](https://github.com/use-strict/7z-wasm) support
 - Writes to [IndexedDb](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API)
 - Group selection/manipulation & drag to sort/arrange
-- Dynamic and auto cached icons for [music](https://github.com/Borewit/music-metadata-browser), images, video & game saves
+- Dynamic and auto cached icons for [music](https://github.com/Borewit/music-metadata-browser), images, video & emulator states
 - Context Menus
   - Cut, Copy, Create shortcut, Delete, Rename
   - [Add file(s)](https://developer.mozilla.org/en-US/docs/Web/API/File/Using_files_from_web_applications), [Map directory](https://developer.mozilla.org/en-US/docs/Web/API/File_System_Access_API)
-  - Open with, Open file/folder location, Open in new window, Open Terminal here
-  - Download, Add to archive, Extract here, Set as wallpaper, Convert audio/video/photo/spreadsheets
+  - Open with options/dialog, Open file/folder location, Open in new window, Open Terminal here
+  - Download, Add to archive, Extract here, Set as wallpaper, Convert audio/video/photo/spreadsheets, Properties (w/Details)
   - Sort by, New Folder, New Text Document
   - Screen Capture
 - Keyboard Shortcuts
@@ -97,6 +53,8 @@ docker run -dp 3000:3000 --rm --name daedalos daedalos
 
 - [Peek](https://github.com/bubkoo/html-to-image) hover preview of windows
 - Focused window indicator
+- Search menu (w/Recent files)
+- AI Chat Agent ([Prompt API](https://docs.google.com/document/d/1VG8HIyz361zGduWgNG7R_R8Xkv0OOJ8b5C9QKeCjU0c/edit) & [WebLLM](https://github.com/mlc-ai/web-llm)) (w/Summarize & Image Generation)
 
 ### Clock
 
@@ -105,6 +63,7 @@ docker run -dp 3000:3000 --rm --name daedalos daedalos
 - NTP server time mode ([ntp.js](http://www.ntpjs.org/))
 - Synced to system clock on load
 - Date tooltip
+- Calendar popup
 
 ### Background
 
@@ -113,9 +72,10 @@ docker run -dp 3000:3000 --rm --name daedalos daedalos
   - [Hexells](https://znah.net/hexells/)
   - [Matrix](https://rezmason.github.io/matrix/)
   - [Coastal Landscape](https://www.shadertoy.com/view/fstyD4)
-- Set via images (Fill, Fit, Stretch, Tile, Center)
+- Set via image/video (Fill, Fit, Stretch, Tile, Center)
 - Picture Slideshow
 - [Astronomy Picture of the Day](https://api.nasa.gov/#apod)
+- AI Generated Wallpapers [Stable Diffusion](https://stability.ai/stable-diffusion)
 
 ### URL
 
@@ -132,11 +92,13 @@ docker run -dp 3000:3000 --rm --name daedalos daedalos
 
 ### Browser (**_.htm, .html_**)
 
-- Loads websites (_w/HTTP header support_)
+- Loads websites (_w/CORS support_)
 - Bookmark bar
 - Favicon support
 - Back/Forward & Reload
 - Google search via Address bar
+- IPFS protocol support
+- [chrome://dino](https://github.com/wayou/t-rex-runner) game
 
 ### [DevTools](https://eruda.liriliri.io/)
 
@@ -163,6 +125,12 @@ docker run -dp 3000:3000 --rm --name daedalos daedalos
 
 - Markdown Viewer
 
+### Messenger
+
+- Encrypted direct messaging client
+- Utilizes [Nostr Protocol](https://nostr.com/) ([NIP-04](https://github.com/nostr-protocol/nips/blob/master/04.md))
+- Automatic public/private key creation
+
 ### [Monaco Editor](https://microsoft.github.io/monaco-editor/)
 
 - Code/text editor
@@ -184,6 +152,7 @@ docker run -dp 3000:3000 --rm --name daedalos daedalos
 ### Photos
 
 - [Supported Formats](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/img#supported_image_formats)
+  - [HEIF](https://github.com/catdad-experiments/libheif-js) (**_.heic, .heif_**)
   - [JPEG XL](https://github.com/niutech/jxl.js) (**_.jxl_**)
   - [QOI](https://gist.github.com/nicolaslegland/f0577cb49b1e56b729a2c0fc0aa151ba) (**_.qoi_**)
   - [TIFF](https://github.com/photopea/UTIF.js) (**_.tif, .tiff_**)
@@ -193,10 +162,16 @@ docker run -dp 3000:3000 --rm --name daedalos daedalos
 
 - Flash Player emulator
 
+### [Stable Diffusion](https://stability.ai/stable-diffusion)
+
+- Creates 512x512 images using artificial intelligence
+- Runs locally using [WebSD](https://mlc.ai/web-stable-diffusion/)
+
 ### [Terminal](https://xtermjs.org/)
 
 - File system support
 - Autocomplete & history
+- Pipe commands together
 - Command list via `help`
 - [Git support](https://isomorphic-git.org/) (checkout & clone)
 - [Python support](https://pyodide.org/) (**_.py_**)
@@ -236,3 +211,55 @@ docker run -dp 3000:3000 --rm --name daedalos daedalos
 - [Skin support](https://skins.webamp.org/)
 - Playlist & streaming support
 - Visualization support (["Milkdrop"](https://github.com/jberg/butterchurn))
+
+# Games 🎮
+
+### [ClassiCube](https://www.classicube.net/)
+
+- Minecraft Classic compatible client
+
+### [DX-Ball](https://habr.com/en/post/147339/)
+
+- Block breaker arcade game like Arkanoid
+
+### [Space Cadet Pinball](https://github.com/alula/SpaceCadetPinball)
+
+- Reverse engineering of 3D Pinball from Windows
+
+### [Quake III Arena](https://github.com/lrusso/Quake3)
+
+- Port of the classic first-person shooter
+
+# Try It 🚀
+
+##### Requirements
+
+- [Node.js](https://nodejs.org/en/download/)
+- [Yarn](https://yarnpkg.com/en/)
+
+##### Development
+
+```
+yarn install
+yarn build:prebuild
+yarn dev
+```
+
+##### Production
+
+```
+yarn install
+yarn build
+yarn serve
+```
+
+##### Docker
+
+```
+docker build -t daedalos .
+docker run -dp 3000:3000 --rm --name daedalos daedalos
+```
+
+##### Notes
+
+- If during `yarn install` you receive the error `digital envelope routines::unsupported`, you need to set `NODE_OPTIONS` to `--openssl-legacy-provider` ([1](https://github.com/DustinBrett/daedalOS/blob/main/Dockerfile#L3), [2](https://github.com/DustinBrett/daedalOS/blob/main/.github/workflows/main.yml#L17), [3](https://stackoverflow.com/a/69699772/5895982))

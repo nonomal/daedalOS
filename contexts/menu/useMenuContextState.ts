@@ -3,6 +3,7 @@ import { TRANSITIONS_IN_MILLISECONDS } from "utils/constants";
 import { isSafari } from "utils/functions";
 
 export type MenuItem = {
+  SvgIcon?: React.MemoExoticComponent<() => React.JSX.Element>;
   action?: () => void;
   checked?: boolean;
   disabled?: boolean;
@@ -12,18 +13,29 @@ export type MenuItem = {
   primary?: boolean;
   seperator?: boolean;
   toggle?: boolean;
+  tooltip?: string;
 };
 
 export type MenuState = {
   items?: MenuItem[];
+  staticX?: number;
+  staticY?: number;
   x?: number;
   y?: number;
 };
 
+export type CaptureTriggerEvent = React.MouseEvent | React.TouchEvent;
+
+type MenuOptions = {
+  staticX?: number;
+  staticY?: number;
+};
+
 export type ContextMenuCapture = {
   onContextMenuCapture: (
-    event?: React.MouseEvent | React.TouchEvent,
-    domRect?: DOMRect
+    event?: CaptureTriggerEvent,
+    domRect?: DOMRect,
+    options?: MenuOptions
   ) => void;
   onTouchEnd?: React.TouchEventHandler;
   onTouchMove?: React.TouchEventHandler;
@@ -31,7 +43,9 @@ export type ContextMenuCapture = {
 };
 
 type MenuContextState = {
-  contextMenu: (getItems: () => MenuItem[]) => ContextMenuCapture;
+  contextMenu: (
+    getItems: (event?: CaptureTriggerEvent) => MenuItem[]
+  ) => ContextMenuCapture;
   menu: MenuState;
   setMenu: React.Dispatch<React.SetStateAction<MenuState>>;
 };
@@ -39,13 +53,17 @@ type MenuContextState = {
 const useMenuContextState = (): MenuContextState => {
   const [menu, setMenu] = useState<MenuState>(Object.create(null) as MenuState);
   const touchTimer = useRef<number>(0);
-  const touchEvent = useRef<React.TouchEvent>();
+  const touchEvent = useRef<React.TouchEvent>(undefined);
   const contextMenu = useCallback(
-    (getItems: () => MenuItem[]): ContextMenuCapture => {
+    (
+      getItems: (event?: CaptureTriggerEvent) => MenuItem[]
+    ): ContextMenuCapture => {
       const onContextMenuCapture = (
-        event?: React.MouseEvent | React.TouchEvent,
-        domRect?: DOMRect
+        event?: CaptureTriggerEvent,
+        domRect?: DOMRect,
+        options?: MenuOptions
       ): void => {
+        const { staticX, staticY } = options || {};
         let x = 0;
         let y = 0;
 
@@ -61,16 +79,23 @@ const useMenuContextState = (): MenuContextState => {
           y = inputY + height;
         }
 
-        const items = getItems();
+        const items = getItems(event);
 
-        setMenu({ items: items.length > 0 ? items : undefined, x, y });
+        setMenu({
+          items: items.length > 0 ? items : undefined,
+          staticX,
+          staticY,
+          x,
+          y,
+        });
       };
 
       return {
         onContextMenuCapture,
         ...(isSafari() && {
-          onTouchEnd: () => {
+          onTouchEnd: (event) => {
             if (touchEvent.current) {
+              event.preventDefault();
               onContextMenuCapture(touchEvent.current);
               touchEvent.current = undefined;
             }
@@ -81,6 +106,7 @@ const useMenuContextState = (): MenuContextState => {
             window.clearTimeout(touchTimer.current);
           },
           onTouchStart: (event: React.TouchEvent) => {
+            event.preventDefault();
             window.clearTimeout(touchTimer.current);
             touchTimer.current = window.setTimeout(() => {
               touchEvent.current = event;

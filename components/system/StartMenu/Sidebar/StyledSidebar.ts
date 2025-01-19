@@ -5,7 +5,6 @@ const StyledSidebar = styled.nav`
   flex-direction: column;
   height: 100%;
   justify-content: space-between;
-  margin-right: 7px;
   overflow: hidden;
   padding-top: 4px;
   position: absolute;
@@ -15,16 +14,24 @@ const StyledSidebar = styled.nav`
   z-index: 1;
 
   &:hover:not(&.collapsed) {
-    backdrop-filter: blur(12px);
+    backdrop-filter: ${({ theme }) => `blur(${theme.sizes.taskbar.panelBlur})`};
     background-color: hsla(0, 0%, 10%, 95%);
     box-shadow: 8px 0 5px -5px hsla(0, 0%, 10%, 50%);
-    transition: all 300ms ease, backdrop-filter 1ms;
+    transition:
+      all 300ms ease,
+      backdrop-filter 1ms;
     transition-timing-function: cubic-bezier(0.15, 1, 0.5, 1);
     width: ${({ theme }) => theme.sizes.startMenu.sideBar.expandedWidth};
 
     @supports ((-webkit-backdrop-filter: none) or (backdrop-filter: none)) {
       background-color: hsla(0, 0%, 10%, 75%);
     }
+  }
+
+  &.collapsed {
+    transition:
+      all 300ms ease,
+      backdrop-filter 600ms;
   }
 `;
 

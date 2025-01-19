@@ -1,14 +1,25 @@
-import type { ComponentProcessProps } from "components/system/Apps/RenderComponent";
-import type {
-  FileReaders,
-  ObjectReaders,
-} from "components/system/Dialogs/Transfer/useTransferDialog";
-import type { Size } from "components/system/Window/RndWindow/useResizable";
 import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api";
+import { type ComponentProcessProps } from "components/system/Apps/RenderComponent";
+import {
+  type FileReaders,
+  type ObjectReaders,
+} from "components/system/Dialogs/Transfer/useTransferDialog";
+import { type Size } from "components/system/Window/RndWindow/useResizable";
+
+type BrowserProcessArguments = {
+  initialTitle?: string;
+};
 
 type DialogProcessArguments = {
   fileReaders?: FileReaders | ObjectReaders;
   progress?: number;
+  shortcutPath?: string;
+};
+
+type MediaPlayerProcessArguments = {
+  pause?: () => void;
+  paused?: (callback?: (paused: boolean) => void) => boolean;
+  play?: () => void;
 };
 
 type MonacoProcessArguments = {
@@ -18,6 +29,7 @@ type MonacoProcessArguments = {
 type PdfProcessArguments = {
   count?: number;
   page?: number;
+  rendering?: boolean;
   scale?: number;
   subTitle?: string;
 };
@@ -33,9 +45,11 @@ type BaseProcessArguments = {
   allowResizing?: boolean;
   autoSizing?: boolean;
   backgroundColor?: string;
+  dependantLibs?: string[];
   hideMaximizeButton?: boolean;
   hideMinimizeButton?: boolean;
   hideTaskbarEntry?: boolean;
+  hideTitlebar?: boolean;
   hideTitlebarIcon?: boolean;
   initialRelativePosition?: RelativePosition;
   libs?: string[];
@@ -44,7 +58,9 @@ type BaseProcessArguments = {
 };
 
 export type ProcessArguments = BaseProcessArguments &
+  BrowserProcessArguments &
   DialogProcessArguments &
+  MediaPlayerProcessArguments &
   MonacoProcessArguments &
   PdfProcessArguments;
 
@@ -59,6 +75,7 @@ export type Process = ProcessArguments &
     Component: React.ComponentType<ComponentProcessProps>;
     closing?: boolean;
     defaultSize?: Size;
+    dialogProcess?: boolean;
     hasWindow?: boolean;
     icon: string;
     maximized?: boolean;

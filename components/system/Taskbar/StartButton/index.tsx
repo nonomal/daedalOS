@@ -1,9 +1,10 @@
+import { useCallback, useRef, useState } from "react";
 import StartButtonIcon from "components/system/Taskbar/StartButton/StartButtonIcon";
-import StyledStartButton from "components/system/Taskbar/StartButton/StyledStartButton";
+import StyledTaskbarButton from "components/system/Taskbar/StyledTaskbarButton";
+import { START_BUTTON_TITLE } from "components/system/Taskbar/functions";
 import useTaskbarContextMenu from "components/system/Taskbar/useTaskbarContextMenu";
-import { useState } from "react";
-import { ICON_PATH, USER_ICON_PATH } from "utils/constants";
-import { getDpi, imageSrc, imageSrcs, isSafari, label } from "utils/functions";
+import { DIV_BUTTON_PROPS } from "utils/constants";
+import { label, preloadImage } from "utils/functions";
 
 type StartButtonProps = {
   startMenuVisible: boolean;
@@ -15,62 +16,45 @@ const StartButton: FC<StartButtonProps> = ({
   toggleStartMenu,
 }) => {
   const [preloaded, setPreloaded] = useState(false);
-  const preloadIcons = async (): Promise<void> => {
-    const supportsImageSrcSet = !isSafari();
-    const preloadedLinks = [
-      ...document.querySelectorAll("link[rel=preload]"),
-    ] as HTMLLinkElement[];
-    const { default: startMenuIcons } = await import(
-      "public/.index/startMenuIcons.json"
-    );
+  const initalizedPreload = useRef(false);
+  const preloadIcons = useCallback(async (): Promise<void> => {
+    if (initalizedPreload.current) return;
+    initalizedPreload.current = true;
 
-    startMenuIcons?.forEach((icon) => {
-      const link = document.createElement(
-        "link"
-      ) as HTMLElementWithPriority<HTMLLinkElement>;
+    const startMenuIcons = (await import("public/.index/startMenuIcons.json"))
+      .default;
 
-      link.as = "image";
-      link.fetchPriority = "high";
-      link.rel = "preload";
-      link.type = "image/webp";
-
-      if (icon.startsWith(ICON_PATH) || icon.startsWith(USER_ICON_PATH)) {
-        if (supportsImageSrcSet) {
-          link.imageSrcset = imageSrcs(icon, 48, ".webp");
-        } else {
-          const [href] = imageSrc(icon, 48, getDpi(), ".webp").split(" ");
-
-          link.href = href;
-        }
-      } else {
-        link.href = icon;
-      }
-
-      if (
-        !preloadedLinks.some(
-          (preloadedLink) =>
-            (link.imageSrcset &&
-              preloadedLink?.imageSrcset?.endsWith(link.imageSrcset)) ||
-            (link.href && preloadedLink?.href?.endsWith(link.href))
-        )
-      ) {
-        document.head.append(link);
-      }
-    });
+    startMenuIcons?.forEach((icon) => preloadImage(icon));
 
     setPreloaded(true);
-  };
+  }, []);
+  const onClick = useCallback(
+    async ({ ctrlKey, shiftKey }: React.MouseEvent): Promise<void> => {
+      if (!preloaded) preloadIcons();
+
+      toggleStartMenu();
+
+      if (ctrlKey && shiftKey) {
+        const { spawnSheep } = await import("utils/spawnSheep");
+
+        spawnSheep();
+      }
+    },
+    [preloadIcons, preloaded, toggleStartMenu]
+  );
 
   return (
-    <StyledStartButton
+    <StyledTaskbarButton
       $active={startMenuVisible}
-      onClick={() => toggleStartMenu()}
+      onClick={onClick}
       onMouseOver={preloaded ? undefined : preloadIcons}
-      {...label("Start")}
+      $highlight
+      {...DIV_BUTTON_PROPS}
+      {...label(START_BUTTON_TITLE)}
       {...useTaskbarContextMenu(true)}
     >
       <StartButtonIcon />
-    </StyledStartButton>
+    </StyledTaskbarButton>
   );
 };
 

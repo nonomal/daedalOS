@@ -1,18 +1,26 @@
+import { basename, extname, join, relative } from "path";
+import { useCallback } from "react";
 import useTransferDialog from "components/system/Dialogs/Transfer/useTransferDialog";
 import {
   getEventData,
   handleFileInputEvent,
 } from "components/system/Files/FileManager/functions";
-import type { DragPosition } from "components/system/Files/FileManager/useDraggableEntries";
-import type { CompleteAction } from "components/system/Files/FileManager/useFolder";
-import { COMPLETE_ACTION } from "components/system/Files/FileManager/useFolder";
+import { type DragPosition } from "components/system/Files/FileManager/useDraggableEntries";
+import {
+  type CompleteAction,
+  type NewPath,
+  COMPLETE_ACTION,
+} from "components/system/Files/FileManager/useFolder";
 import { useFileSystem } from "contexts/fileSystem";
 import { useProcesses } from "contexts/process";
 import { useSession } from "contexts/session";
-import { basename, extname, join, relative } from "path";
-import { useCallback } from "react";
-import { DESKTOP_PATH } from "utils/constants";
-import { haltEvent, updateIconPositions } from "utils/functions";
+import {
+  DESKTOP_PATH,
+  MOUNTABLE_EXTENSIONS,
+  PREVENT_SCROLL,
+} from "utils/constants";
+import { getExtension, haltEvent, updateIconPositions } from "utils/functions";
+import { useProcessesRef } from "hooks/useProcessesRef";
 
 export type FileDrop = {
   onDragLeave?: (event: DragEvent | React.DragEvent<HTMLElement>) => void;
@@ -21,7 +29,7 @@ export type FileDrop = {
 };
 
 type FileDropProps = {
-  callback?: (path: string, buffer?: Buffer) => Promise<void>;
+  callback?: NewPath;
   directory?: string;
   id?: string;
   onDragLeave?: (event: DragEvent | React.DragEvent<HTMLElement>) => void;
@@ -38,14 +46,15 @@ const useFileDrop = ({
   updatePositions,
 }: FileDropProps): FileDrop => {
   const { url } = useProcesses();
+  const processesRef = useProcessesRef();
   const { iconPositions, sortOrders, setIconPositions } = useSession();
-  const { mkdirRecursive, updateFolder, writeFile } = useFileSystem();
+  const { exists, mkdirRecursive, updateFolder, writeFile } = useFileSystem();
   const updateProcessUrl = useCallback(
     async (
       filePath: string,
       fileData?: Buffer,
       completeAction?: CompleteAction
-    ): Promise<void> => {
+    ): Promise<string> => {
       if (id) {
         if (fileData) {
           const tempPath = join(DESKTOP_PATH, filePath);
@@ -57,88 +66,120 @@ const useFileDrop = ({
               url(id, tempPath);
             }
             updateFolder(DESKTOP_PATH, filePath);
+
+            return basename(tempPath);
           }
         } else if (completeAction === COMPLETE_ACTION.UPDATE_URL) {
           url(id, filePath);
         }
       }
+
+      return "";
     },
     [id, mkdirRecursive, updateFolder, url, writeFile]
   );
   const { openTransferDialog } = useTransferDialog();
-
-  return {
-    onDragLeave,
-    onDragOver: (event) => {
+  const onDragOverThenHaltEvent = useCallback(
+    (event: DragEvent | React.DragEvent<HTMLElement>): void => {
       onDragOver?.(event);
       haltEvent(event);
     },
-    onDrop: (event) => {
+    [onDragOver]
+  );
+  const onDrop = useCallback(
+    (event: DragEvent | React.DragEvent<HTMLElement>): void => {
+      if (MOUNTABLE_EXTENSIONS.has(getExtension(directory))) return;
+
       if (updatePositions && event.target instanceof HTMLElement) {
         const { files, text } = getEventData(event as React.DragEvent);
 
         if (files.length === 0 && text === "") return;
 
-        const dragPosition = {
-          x: event.clientX,
-          y: event.clientY,
-        } as DragPosition;
+        const checkUpdatableIcons = async (): Promise<void> => {
+          const dragPosition = {
+            x: event.clientX,
+            y: event.clientY,
+          } as DragPosition;
 
-        let fileEntries: string[] = [];
+          let fileEntries: string[] = [];
 
-        if (text) {
-          try {
-            fileEntries = JSON.parse(text) as string[];
-          } catch {
-            // Ignore failed JSON parsing
+          if (text) {
+            try {
+              fileEntries = JSON.parse(text) as string[];
+            } catch {
+              // Ignore failed JSON parsing
+            }
+
+            if (!Array.isArray(fileEntries)) return;
+
+            const [firstEntry] = fileEntries;
+
+            if (!firstEntry) return;
+
+            if (
+              firstEntry.startsWith(directory) &&
+              basename(firstEntry) === relative(directory, firstEntry)
+            ) {
+              return;
+            }
+
+            fileEntries = fileEntries.map((entry) => basename(entry));
+          } else if (files instanceof FileList) {
+            fileEntries = [...files].map((file) => file.name);
+          } else {
+            fileEntries = [...files]
+              .map((file) => file.getAsFile()?.name || "")
+              .filter(Boolean);
           }
 
-          const [firstEntry] = fileEntries;
+          fileEntries = await Promise.all(
+            fileEntries.map(async (fileEntry) => {
+              let entryIteration = `${directory}/${fileEntry}`;
 
-          if (!firstEntry) return;
+              if (
+                !iconPositions[entryIteration] ||
+                !(await exists(entryIteration))
+              ) {
+                return fileEntry;
+              }
 
-          if (
-            firstEntry.startsWith(directory) &&
-            basename(firstEntry) === relative(directory, firstEntry)
-          ) {
-            return;
-          }
+              let iteration = 0;
 
-          fileEntries = fileEntries.map((entry) => basename(entry));
-        } else if (files instanceof FileList) {
-          fileEntries = [...files].map((file) => file.name);
-        } else {
-          fileEntries = [...files]
-            .map((file) => file.getAsFile()?.name || "")
-            .filter(Boolean);
-        }
+              do {
+                iteration += 1;
+                entryIteration = `${directory}/${basename(
+                  fileEntry,
+                  extname(fileEntry)
+                )} (${iteration})${extname(fileEntry)}`;
+              } while (
+                iconPositions[entryIteration] &&
+                // eslint-disable-next-line no-await-in-loop
+                (await exists(entryIteration))
+              );
 
-        fileEntries = fileEntries.map((fileEntry) => {
-          if (!iconPositions[`${directory}/${fileEntry}`]) return fileEntry;
+              return basename(entryIteration);
+            })
+          );
 
-          let iteration = 0;
-          let entryIteration = "";
+          updateIconPositions(
+            directory,
+            event.target as HTMLElement,
+            iconPositions,
+            sortOrders,
+            dragPosition,
+            fileEntries,
+            setIconPositions,
+            exists
+          );
+        };
 
-          do {
-            iteration += 1;
-            entryIteration = `${directory}/${basename(
-              fileEntry,
-              extname(fileEntry)
-            )} (${iteration})${extname(fileEntry)}`;
-          } while (iconPositions[entryIteration]);
+        checkUpdatableIcons();
+      }
 
-          return basename(entryIteration);
-        });
+      const hasUpdateId = typeof id === "string";
 
-        updateIconPositions(
-          directory,
-          event.target,
-          iconPositions,
-          sortOrders,
-          dragPosition,
-          fileEntries,
-          setIconPositions
-        );
+      if (hasUpdateId && !updatePositions && directory === DESKTOP_PATH) {
+        processesRef.current[id]?.componentWindow?.focus(PREVENT_SCROLL);
       }
 
       handleFileInputEvent(
@@ -146,9 +187,28 @@ const useFileDrop = ({
         callback || updateProcessUrl,
         directory,
         openTransferDialog,
-        Boolean(id)
+        hasUpdateId
       );
     },
+    [
+      callback,
+      directory,
+      exists,
+      iconPositions,
+      id,
+      openTransferDialog,
+      processesRef,
+      setIconPositions,
+      sortOrders,
+      updatePositions,
+      updateProcessUrl,
+    ]
+  );
+
+  return {
+    onDragLeave,
+    onDragOver: onDragOverThenHaltEvent,
+    onDrop,
   };
 };
 

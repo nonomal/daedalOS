@@ -1,13 +1,15 @@
-import type { ComponentProcessProps } from "components/system/Apps/RenderComponent";
-import StyledButton from "components/system/Dialogs/Transfer/StyledButton";
-import StyledTransfer from "components/system/Dialogs/Transfer/StyledTransfer";
-import type {
-  FileReaders,
-  ObjectReaders,
-} from "components/system/Dialogs/Transfer/useTransferDialog";
-import { useProcesses } from "contexts/process";
 import { basename, dirname } from "path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import useCloseOnEscape from "components/system/Dialogs/useCloseOnEscape";
+import { type ComponentProcessProps } from "components/system/Apps/RenderComponent";
+import StyledButton from "components/system/Dialogs/StyledButton";
+import StyledTransfer from "components/system/Dialogs/Transfer/StyledTransfer";
+import {
+  type FileReaders,
+  type ObjectReaders,
+  type Operation,
+} from "components/system/Dialogs/Transfer/useTransferDialog";
+import { useProcesses } from "contexts/process";
 import { ONE_TIME_PASSIVE_EVENT } from "utils/constants";
 import { haltEvent } from "utils/functions";
 
@@ -28,10 +30,21 @@ const Transfer: FC<ComponentProcessProps> = ({ id }) => {
   const [currentTransfer, setCurrentTransfer] = useState<[string, File]>();
   const [cd = "", { name = "" } = {}] = currentTransfer || [];
   const [progress, setProgress] = useState<number>(0);
-  const actionName = useMemo(
-    () => (url && !fileReaders ? "Extracting" : "Copying"),
-    [fileReaders, url]
-  );
+  const currentOperation = useRef<Operation>(undefined);
+  const actionName = useMemo(() => {
+    if (closing || !process) return currentOperation.current;
+
+    let operation: Operation = "Copying";
+    const { operation: objectOperation } =
+      (fileReaders as ObjectReaders)?.[0] || {};
+
+    if (objectOperation) operation = objectOperation;
+    else if (url && !fileReaders) operation = "Extracting";
+
+    currentOperation.current = operation;
+
+    return operation;
+  }, [closing, fileReaders, process, url]);
   const processing = useRef(false);
   const completeTransfer = useCallback(() => {
     processing.current = false;
@@ -85,6 +98,7 @@ const Transfer: FC<ComponentProcessProps> = ({ id }) => {
         },
         ONE_TIME_PASSIVE_EVENT
       );
+      // eslint-disable-next-line unicorn/prefer-blob-reading-methods
       reader.readAsArrayBuffer(file);
     },
     [completeTransfer]
@@ -96,6 +110,7 @@ const Transfer: FC<ComponentProcessProps> = ({ id }) => {
         : fileReaders?.length || Number.POSITIVE_INFINITY,
     [fileReaders]
   );
+  const closeOnEscape = useCloseOnEscape(id);
 
   useEffect(() => {
     if (!processing.current) {
@@ -154,7 +169,7 @@ const Transfer: FC<ComponentProcessProps> = ({ id }) => {
   );
 
   return (
-    <StyledTransfer onContextMenu={haltEvent}>
+    <StyledTransfer onContextMenu={haltEvent} {...closeOnEscape}>
       <h1>
         {name
           ? `${actionName} '${

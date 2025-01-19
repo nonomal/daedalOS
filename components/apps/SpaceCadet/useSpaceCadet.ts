@@ -1,28 +1,20 @@
-import { useProcesses } from "contexts/process";
 import { useEffect, useState } from "react";
+import { type ContainerHookProps } from "components/system/Apps/AppContainer";
+import useEmscriptenMount from "components/system/Files/FileManager/useEmscriptenMount";
+import { type EmscriptenFS } from "contexts/fileSystem/useAsyncFs";
+import { useProcesses } from "contexts/process";
 import { TRANSITIONS_IN_MILLISECONDS } from "utils/constants";
 import { loadFiles } from "utils/functions";
 
-declare global {
-  interface Window {
-    Module: {
-      SDL2?: {
-        audioContext: AudioContext;
-      };
-      canvas: HTMLCanvasElement;
-      postRun: () => void;
-    };
-  }
-}
-
-const useSpaceCadet = (
-  id: string,
-  _url: string,
-  containerRef: React.MutableRefObject<HTMLDivElement | null>,
-  setLoading: React.Dispatch<React.SetStateAction<boolean>>
-): void => {
-  const { processes: { [id]: { libs = [] } = {} } = {} } = useProcesses();
+const useSpaceCadet = ({
+  containerRef,
+  id,
+  setLoading,
+}: ContainerHookProps): void => {
+  const { linkElement, processes: { [id]: { libs = [] } = {} } = {} } =
+    useProcesses();
   const [canvas, setCanvas] = useState<HTMLCanvasElement>();
+  const mountEmFs = useEmscriptenMount();
 
   useEffect(() => {
     const containerCanvas = containerRef.current?.querySelector("canvas");
@@ -30,11 +22,15 @@ const useSpaceCadet = (
     if (containerCanvas instanceof HTMLCanvasElement) {
       window.Module = {
         canvas: containerCanvas,
-        postRun: () => setLoading(false),
+        postRun: () => {
+          setLoading(false);
+          mountEmFs(window.FS as EmscriptenFS, "SpaceCadet");
+          linkElement(id, "peekElement", containerCanvas);
+        },
       };
       setCanvas(containerCanvas);
     }
-  }, [containerRef, setLoading]);
+  }, [containerRef, id, linkElement, mountEmFs, setLoading]);
 
   useEffect(() => {
     if (canvas) {
@@ -53,7 +49,11 @@ const useSpaceCadet = (
 
     return () => {
       if (canvas && window.Module) {
-        window.Module.SDL2?.audioContext.close();
+        try {
+          window.Module.SDL2?.audioContext.close();
+        } catch {
+          // Ignore errors during closing
+        }
       }
     };
   }, [canvas, containerRef, libs]);

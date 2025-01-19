@@ -1,24 +1,28 @@
+import { basename, dirname, join } from "path";
+import { useCallback, useEffect, useRef, useState } from "react";
 import StyledPaint from "components/apps/Paint/StyledPaint";
-import type { ComponentProcessProps } from "components/system/Apps/RenderComponent";
+import { type ComponentProcessProps } from "components/system/Apps/RenderComponent";
 import StyledLoading from "components/system/Files/FileManager/StyledLoading";
 import useFileDrop from "components/system/Files/FileManager/useFileDrop";
 import useTitle from "components/system/Window/useTitle";
 import { useFileSystem } from "contexts/fileSystem";
 import { useProcesses } from "contexts/process";
 import { useSession } from "contexts/session";
-import type { WallpaperFit } from "contexts/session/types";
-import { basename, dirname, join } from "path";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type WallpaperFit } from "contexts/session/types";
 import {
   DESKTOP_PATH,
   IFRAME_CONFIG,
   ONE_TIME_PASSIVE_EVENT,
   PICUTRES_PATH,
 } from "utils/constants";
+import { blobToBuffer } from "utils/functions";
 
 type JsPaint = {
   close: () => void;
   file_new: () => void;
+  onunhandledrejection: (
+    error: Error & { reason: { message: string } }
+  ) => void;
   open_from_file: (file: File, fileHandle: string) => void;
   storage_quota_exceeded: () => void;
   systemHooks: {
@@ -53,18 +57,13 @@ const Paint: FC<ComponentProcessProps> = ({ id }) => {
         const wallpaperPath = join(PICUTRES_PATH, "wallpaper.png");
 
         canvas.toBlob(async (blob) => {
-          await writeFile(
-            wallpaperPath,
-            Buffer.from((await blob?.arrayBuffer()) as ArrayBuffer),
-            true
-          );
+          await writeFile(wallpaperPath, await blobToBuffer(blob), true);
           setWallpaper(wallpaperPath, fit);
         });
       },
     [setWallpaper, writeFile]
   );
   const { onDragOver, onDrop } = useFileDrop({ id });
-  const style = useMemo(() => ({ opacity: loaded ? 1 : 0 }), [loaded]);
 
   useEffect(() => {
     prependFileToTitle("Untitled");
@@ -117,16 +116,12 @@ const Paint: FC<ComponentProcessProps> = ({ id }) => {
           await createPath(
             `${defaultFileName}.png`,
             DESKTOP_PATH,
-            Buffer.from(await (await getBlob("image/png")).arrayBuffer())
+            await blobToBuffer(await getBlob("image/png"))
           )
         );
       jsPaint.systemHooks.writeBlobToHandle = async (fileHandle, blob) => {
         if (await exists(fileHandle)) {
-          await writeFile(
-            fileHandle,
-            Buffer.from(await blob.arrayBuffer()),
-            true
-          );
+          await writeFile(fileHandle, await blobToBuffer(blob), true);
           updateFolder(dirname(fileHandle), basename(fileHandle));
         }
       };
@@ -152,6 +147,19 @@ const Paint: FC<ComponentProcessProps> = ({ id }) => {
   useEffect(() => {
     if (jsPaintInstance && url) {
       readFile(url).then((buffer) => {
+        // eslint-disable-next-line prefer-destructuring
+        const onunhandledrejection = jsPaintInstance.onunhandledrejection;
+
+        jsPaintInstance.onunhandledrejection = (error) => {
+          onunhandledrejection?.(error);
+
+          if (
+            error?.reason?.message ===
+            "either options.data or options.file or options.filePath must be passed"
+          ) {
+            prependFileToTitle("Untitled");
+          }
+        };
         jsPaintInstance.open_from_file(new File([buffer], url), url);
         prependFileToTitle(basename(url));
       });
@@ -159,15 +167,14 @@ const Paint: FC<ComponentProcessProps> = ({ id }) => {
   }, [jsPaintInstance, prependFileToTitle, readFile, url]);
 
   return (
-    <StyledPaint>
+    <StyledPaint $loaded={loaded}>
       {!loaded && <StyledLoading className="loading" />}
       <iframe
         ref={iframeRef}
         height="100%"
-        id="jspaint-iframe"
+        id={`jspaint-${id}`}
         onLoad={() => setLoaded(true)}
         src={paintSrc}
-        style={style}
         title={id}
         width="100%"
         {...IFRAME_CONFIG}

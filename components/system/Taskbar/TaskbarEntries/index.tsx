@@ -1,17 +1,23 @@
+import { AnimatePresence } from "motion/react";
+import dynamic from "next/dynamic";
+import { memo } from "react";
 import StyledTaskbarEntries from "components/system/Taskbar/TaskbarEntries/StyledTaskbarEntries";
 import { useProcesses } from "contexts/process";
-import { AnimatePresence } from "framer-motion";
-import dynamic from "next/dynamic";
 
 const TaskbarEntry = dynamic(
   () => import("components/system/Taskbar/TaskbarEntry")
 );
 
-const TaskbarEntries: FC = () => {
+type TaskbarEntriesProps = {
+  clockWidth: number;
+  hasAI: boolean;
+};
+
+const TaskbarEntries: FC<TaskbarEntriesProps> = ({ clockWidth, hasAI }) => {
   const { processes = {} } = useProcesses();
 
   return (
-    <StyledTaskbarEntries>
+    <StyledTaskbarEntries $clockWidth={clockWidth} $hasAI={hasAI}>
       <AnimatePresence initial={false} presenceAffectsLayout={false}>
         {Object.entries(processes)
           .filter(
@@ -25,4 +31,4 @@ const TaskbarEntries: FC = () => {
   );
 };
 
-export default TaskbarEntries;
+export default memo(TaskbarEntries);

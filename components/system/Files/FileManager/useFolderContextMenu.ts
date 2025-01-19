@@ -1,53 +1,69 @@
+import { basename, dirname, join } from "path";
+import { useCallback, useMemo } from "react";
+import { WALLPAPER_MENU } from "components/system/Desktop/Wallpapers/constants";
 import { getIconByFileExtension } from "components/system/Files/FileEntry/functions";
-import type { FolderActions } from "components/system/Files/FileManager/useFolder";
-import type {
-  SortBy,
-  SortByOrder,
+import { type FolderActions } from "components/system/Files/FileManager/useFolder";
+import {
+  type SortBy,
+  type SortByOrder,
 } from "components/system/Files/FileManager/useSortBy";
 import { useFileSystem } from "contexts/fileSystem";
+import { getMountUrl, isMountedFolder } from "contexts/fileSystem/functions";
 import { useMenu } from "contexts/menu";
-import type { ContextMenuCapture } from "contexts/menu/useMenuContextState";
+import {
+  type CaptureTriggerEvent,
+  type ContextMenuCapture,
+  type MenuItem,
+} from "contexts/menu/useMenuContextState";
 import { useProcesses } from "contexts/process";
 import { useSession } from "contexts/session";
-import { dirname, join } from "path";
-import { useCallback, useMemo } from "react";
+import { useProcessesRef } from "hooks/useProcessesRef";
+import { useWebGPUCheck } from "hooks/useWebGPUCheck";
 import {
-  DEFAULT_LOCALE,
   DESKTOP_PATH,
   FOLDER_ICON,
-  isFileSystemSupported,
+  INDEX_FILE,
   MENU_SEPERATOR,
+  MOUNTABLE_EXTENSIONS,
+  PROCESS_DELIMITER,
 } from "utils/constants";
-import { bufferToBlob } from "utils/functions";
+import {
+  blobToBuffer,
+  bufferToBlob,
+  generatePrettyTimestamp,
+  getExtension,
+  isFileSystemMappingSupported,
+  isFirefox,
+  isSafari,
+  updateIconPositions,
+} from "utils/functions";
+
+const stopGlobalMusicVisualization = (): void =>
+  window.WebampGlobal?.store.dispatch({
+    enabled: false,
+    type: "SET_MILKDROP_DESKTOP",
+  });
 
 const NEW_FOLDER = "New folder";
 const NEW_TEXT_DOCUMENT = "New Text Document.txt";
 const NEW_RTF_DOCUMENT = "New Rich Text Document.whtml";
 
-const richTextDocumentIcon = getIconByFileExtension(".whtml");
-const textDocumentIcon = getIconByFileExtension(".txt");
-
 const updateSortBy =
   (value: SortBy, defaultIsAscending: boolean) =>
-  ([sortBy, isAscending]: SortByOrder): SortByOrder =>
-    [value, sortBy === value ? !isAscending : defaultIsAscending];
+  ([sortBy, isAscending]: SortByOrder): SortByOrder => [
+    value,
+    sortBy === value ? !isAscending : defaultIsAscending,
+  ];
 
 const EASTER_EGG_CLICK_COUNT = 2;
-
 const CAPTURE_FPS = 30;
-const CAPTURE_TIME_DATE_FORMAT: Intl.DateTimeFormatOptions = {
-  day: "2-digit",
-  hour: "2-digit",
-  hour12: false,
-  minute: "2-digit",
-  month: "2-digit",
-  second: "2-digit",
-  year: "numeric",
-};
+const MIME_TYPE_VIDEO_WEBM = "video/webm";
+const MIME_TYPE_VIDEO_MP4 = "video/mp4";
 
 let triggerEasterEggCountdown = EASTER_EGG_CLICK_COUNT;
 
 let currentMediaStream: MediaStream | undefined;
+let currentMediaRecorder: MediaRecorder | undefined;
 
 const useFolderContextMenu = (
   url: string,
@@ -57,19 +73,26 @@ const useFolderContextMenu = (
     pasteToFolder,
     sortByOrder: [[sortBy, isAscending], setSortBy],
   }: FolderActions,
-  isDesktop?: boolean
+  isDesktop?: boolean,
+  isStartMenu?: boolean
 ): ContextMenuCapture => {
   const { contextMenu } = useMenu();
   const {
+    exists,
     mapFs,
     pasteList = {},
     readFile,
+    rootFs,
     writeFile,
     updateFolder,
   } = useFileSystem();
   const {
+    iconPositions,
+    setForegroundId,
     setWallpaper: setSessionWallpaper,
     setIconPositions,
+    sortOrders,
+    updateRecentFiles,
     wallpaperImage,
   } = useSession();
   const setWallpaper = useCallback(
@@ -92,7 +115,7 @@ const useFolderContextMenu = (
     },
     [setSessionWallpaper]
   );
-  const { open } = useProcesses();
+  const { minimize, open } = useProcesses();
   const updateSorting = useCallback(
     (value: SortBy | "", defaultIsAscending: boolean): void => {
       setIconPositions((currentIconPositions) =>
@@ -110,51 +133,72 @@ const useFolderContextMenu = (
     },
     [setIconPositions, setSortBy, url]
   );
+  const canCapture = useMemo(
+    () =>
+      isDesktop &&
+      typeof window !== "undefined" &&
+      typeof navigator?.mediaDevices?.getDisplayMedia === "function" &&
+      (window?.MediaRecorder?.isTypeSupported(MIME_TYPE_VIDEO_WEBM) ||
+        window?.MediaRecorder?.isTypeSupported(MIME_TYPE_VIDEO_MP4)),
+    [isDesktop]
+  );
   const captureScreen = useCallback(async () => {
-    if (currentMediaStream) {
+    if (currentMediaRecorder && currentMediaStream) {
       const { active: wasActive } = currentMediaStream;
 
-      currentMediaStream.getTracks().forEach((track) => track.stop());
+      try {
+        currentMediaRecorder.requestData();
+        currentMediaStream.getTracks().forEach((track) => track.stop());
+      } catch {
+        // Ignore errors with MediaRecorder
+      }
+
+      currentMediaRecorder = undefined;
       currentMediaStream = undefined;
 
       if (wasActive) return;
     }
 
+    const isFirefoxOrSafari = isFirefox() || isSafari();
     const displayMediaOptions: DisplayMediaStreamOptions &
       MediaStreamConstraints = {
-      preferCurrentTab: true,
       video: {
         frameRate: CAPTURE_FPS,
       },
+      // https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia#browser_compatibility
+      ...(!isFirefoxOrSafari && {
+        preferCurrentTab: true,
+        selfBrowserSurface: "include",
+        surfaceSwitching: "include",
+        systemAudio: "include",
+      }),
     };
-    currentMediaStream = await navigator.mediaDevices.getDisplayMedia(
-      displayMediaOptions
-    );
+
+    currentMediaStream =
+      await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
 
     const [currentVideoTrack] = currentMediaStream.getVideoTracks();
     const { height, width } = currentVideoTrack.getSettings();
-    const mediaRecorder = new MediaRecorder(currentMediaStream, {
+    const supportsWebm = MediaRecorder.isTypeSupported(MIME_TYPE_VIDEO_WEBM);
+    const fileName = `Screen Capture ${generatePrettyTimestamp()}.${
+      supportsWebm ? "webm" : "mp4"
+    }`;
+
+    currentMediaRecorder = new MediaRecorder(currentMediaStream, {
       bitsPerSecond: height && width ? height * width * CAPTURE_FPS : undefined,
-      mimeType: "video/webm",
+      mimeType: supportsWebm ? MIME_TYPE_VIDEO_WEBM : MIME_TYPE_VIDEO_MP4,
     });
-    const timeStamp = new Intl.DateTimeFormat(
-      DEFAULT_LOCALE,
-      CAPTURE_TIME_DATE_FORMAT
-    )
-      .format(new Date())
-      .replace(/[/:]/g, "-")
-      .replace(",", "");
-    const fileName = `Screen Capture ${timeStamp}.webm`;
+
     const capturePath = join(DESKTOP_PATH, fileName);
     const startTime = Date.now();
     let hasCapturedData = false;
 
-    mediaRecorder.start();
-    mediaRecorder.addEventListener("dataavailable", async (event) => {
+    currentMediaRecorder.start();
+    currentMediaRecorder.addEventListener("dataavailable", async (event) => {
       const { data } = event;
 
-      if (data) {
-        const bufferData = Buffer.from(await data.arrayBuffer());
+      if (data?.size) {
+        const bufferData = await blobToBuffer(data);
 
         await writeFile(
           capturePath,
@@ -164,7 +208,11 @@ const useFolderContextMenu = (
           hasCapturedData
         );
 
-        if (mediaRecorder.state === "inactive") {
+        if (
+          supportsWebm &&
+          !isFirefoxOrSafari &&
+          (!currentMediaRecorder || currentMediaRecorder.state === "inactive")
+        ) {
           const { default: fixWebmDuration } = await import(
             "fix-webm-duration"
           );
@@ -175,27 +223,166 @@ const useFolderContextMenu = (
             async (capturedFile) => {
               await writeFile(
                 capturePath,
-                Buffer.from(await capturedFile.arrayBuffer()),
+                await blobToBuffer(capturedFile),
                 true
               );
               updateFolder(DESKTOP_PATH, fileName);
             }
           );
+        } else {
+          updateFolder(DESKTOP_PATH, fileName);
         }
 
         hasCapturedData = true;
       }
     });
   }, [readFile, updateFolder, writeFile]);
+  const hasWebGPU = useWebGPUCheck();
+  const processesRef = useProcessesRef();
+  const updateDesktopIconPositions = useCallback(
+    (names: string[], event?: CaptureTriggerEvent) => {
+      if (event && isDesktop) {
+        const { clientX: x, clientY: y } =
+          "TouchEvent" in window && event.nativeEvent instanceof TouchEvent
+            ? event.nativeEvent.touches[0]
+            : (event.nativeEvent as MouseEvent);
+
+        updateIconPositions(
+          DESKTOP_PATH,
+          event.target as HTMLElement,
+          iconPositions,
+          sortOrders,
+          { x, y },
+          names,
+          setIconPositions,
+          exists
+        );
+      }
+    },
+    [exists, iconPositions, isDesktop, setIconPositions, sortOrders]
+  );
+  const newEntry = useCallback(
+    async (
+      entryName: string,
+      data?: Buffer,
+      event?: CaptureTriggerEvent
+    ): Promise<string> =>
+      newPath(entryName, data, "rename", (name) =>
+        updateDesktopIconPositions([name], event)
+      ),
+    [newPath, updateDesktopIconPositions]
+  );
 
   return useMemo(
     () =>
-      contextMenu?.(() => {
-        const ADD_FILE = { action: () => addToFolder(), label: "Add file(s)" };
+      contextMenu?.((event) => {
+        const { offsetX, offsetY, target } = (event as React.MouseEvent)
+          .nativeEvent;
+        const targetElement = target as HTMLElement;
+
+        if (!isDesktop && !isStartMenu && offsetX > targetElement.clientWidth) {
+          const SCROLL_BUTTON_HEIGHT = 17;
+          const SCROLL_ITERATION_HEIGHT = 44;
+
+          return [
+            {
+              action: () => {
+                let top = 0;
+
+                if (
+                  offsetY >
+                  targetElement.clientHeight - SCROLL_BUTTON_HEIGHT
+                ) {
+                  top = targetElement.scrollHeight;
+                } else if (offsetY > SCROLL_BUTTON_HEIGHT) {
+                  const scrollBarButtonsHeight = SCROLL_BUTTON_HEIGHT * 2;
+
+                  top = Math.round(
+                    (targetElement.scrollHeight *
+                      (offsetY - scrollBarButtonsHeight)) /
+                      (targetElement.clientHeight - scrollBarButtonsHeight)
+                  );
+                }
+
+                targetElement.scrollTo({
+                  behavior: "instant",
+                  top,
+                });
+              },
+              label: "Scroll Here",
+            },
+            MENU_SEPERATOR,
+            {
+              action: () => {
+                targetElement.scrollTo({
+                  behavior: "instant",
+                  top: 0,
+                });
+              },
+              label: "Top",
+            },
+            {
+              action: () => {
+                targetElement.scrollTo({
+                  behavior: "instant",
+                  top: targetElement.scrollHeight,
+                });
+              },
+              label: "Bottom",
+            },
+            MENU_SEPERATOR,
+            {
+              action: () => {
+                targetElement.scrollBy({
+                  behavior: "instant",
+                  top: -targetElement.clientHeight,
+                });
+              },
+              label: "Page Up",
+            },
+            {
+              action: () => {
+                targetElement.scrollBy({
+                  behavior: "instant",
+                  top: targetElement.clientHeight,
+                });
+              },
+              label: "Page Down",
+            },
+            MENU_SEPERATOR,
+            {
+              action: () => {
+                targetElement.scrollBy({
+                  behavior: "instant",
+                  top: -SCROLL_ITERATION_HEIGHT,
+                });
+              },
+              label: "Scroll Up",
+            },
+            {
+              action: () => {
+                targetElement.scrollBy({
+                  behavior: "instant",
+                  top: SCROLL_ITERATION_HEIGHT,
+                });
+              },
+              label: "Scroll Down",
+            },
+          ];
+        }
+
+        const ADD_FILE = {
+          action: () =>
+            addToFolder().then((files) =>
+              updateDesktopIconPositions(files, event)
+            ),
+          label: "Add file(s)",
+        };
         const MAP_DIRECTORY = {
           action: () =>
             mapFs(url)
               .then((mappedFolder) => {
+                updateDesktopIconPositions([mappedFolder], event);
                 updateFolder(url, mappedFolder);
                 open("FileExplorer", { url: join(url, mappedFolder) });
               })
@@ -204,9 +391,17 @@ const useFolderContextMenu = (
               }),
           label: "Map directory",
         };
-        const FS_COMMANDS = isFileSystemSupported()
-          ? [ADD_FILE, MAP_DIRECTORY]
-          : [ADD_FILE];
+        const FS_COMMANDS = [
+          ADD_FILE,
+          ...(isFileSystemMappingSupported() ? [MAP_DIRECTORY] : []),
+        ];
+        const isMusicVisualizationRunning =
+          document.querySelector("main .webamp-desktop canvas") instanceof
+          HTMLCanvasElement;
+        const mountUrl = getMountUrl(url, rootFs?.mntMap || {});
+        const isReadOnly =
+          MOUNTABLE_EXTENSIONS.has(getExtension(url)) ||
+          (mountUrl && !isMountedFolder(rootFs?.mntMap[mountUrl]));
 
         return [
           {
@@ -251,52 +446,37 @@ const useFolderContextMenu = (
                 MENU_SEPERATOR,
                 {
                   label: "Background",
-                  menu: [
-                    {
-                      action: () => setWallpaper("APOD"),
-                      label: "APOD",
-                      toggle: wallpaperImage.startsWith("APOD"),
-                    },
-                    {
-                      action: () => setWallpaper("COASTAL_LANDSCAPE"),
-                      label: "Coastal Landscape",
-                      toggle: wallpaperImage === "COASTAL_LANDSCAPE",
-                    },
-                    {
-                      action: () => setWallpaper("HEXELLS"),
-                      label: "Hexells",
-                      toggle: wallpaperImage === "HEXELLS",
-                    },
-                    {
-                      action: () => setWallpaper("MATRIX 2D"),
-                      label: "Matrix (2D)",
-                      toggle: wallpaperImage === "MATRIX 2D",
-                    },
-                    {
-                      action: () => setWallpaper("MATRIX 3D"),
-                      label: "Matrix (3D)",
-                      toggle: wallpaperImage === "MATRIX 3D",
-                    },
-                    {
-                      action: () => setWallpaper("SLIDESHOW"),
-                      label: "Picture Slideshow",
-                      toggle: wallpaperImage === "SLIDESHOW",
-                    },
-                    {
-                      action: () => setWallpaper("VANTA"),
-                      label: `Vanta Waves${
-                        wallpaperImage === "VANTA WIREFRAME"
-                          ? " (Wireframe)"
-                          : ""
-                      }`,
-                      toggle: wallpaperImage.startsWith("VANTA"),
-                    },
-                  ],
+                  menu: WALLPAPER_MENU.filter(
+                    ({ requiresWebGPU }) => !requiresWebGPU || hasWebGPU
+                  ).reduce<MenuItem[]>(
+                    (menu, item) => [
+                      ...menu,
+                      {
+                        action: () => {
+                          if (isMusicVisualizationRunning) {
+                            stopGlobalMusicVisualization?.();
+                          }
+                          setWallpaper(item.id);
+                        },
+                        label: item.name || item.id,
+                        toggle: item.startsWith
+                          ? wallpaperImage.startsWith(item.id)
+                          : wallpaperImage === item.id,
+                      },
+                    ],
+                    isMusicVisualizationRunning
+                      ? [
+                          {
+                            action: stopGlobalMusicVisualization,
+                            checked: true,
+                            label: "Music Visualization",
+                          },
+                          MENU_SEPERATOR,
+                        ]
+                      : []
+                  ),
                 },
-                ...(isDesktop &&
-                "mediaDevices" in navigator &&
-                "getDisplayMedia" in navigator.mediaDevices &&
-                window.MediaRecorder
+                ...(canCapture
                   ? [
                       {
                         action: captureScreen,
@@ -308,44 +488,90 @@ const useFolderContextMenu = (
                   : []),
               ]
             : []),
-          MENU_SEPERATOR,
-          ...FS_COMMANDS,
-          {
-            action: () => open("Terminal", { url }),
-            label: "Open Terminal here",
-          },
-          {
-            action: () => pasteToFolder(),
-            disabled: Object.keys(pasteList).length === 0,
-            label: "Paste",
-          },
-          MENU_SEPERATOR,
-          {
-            label: "New",
-            menu: [
-              {
-                action: () => newPath(NEW_FOLDER, undefined, "rename"),
-                icon: FOLDER_ICON,
-                label: "Folder",
-              },
-              MENU_SEPERATOR,
-              {
-                action: () =>
-                  newPath(NEW_RTF_DOCUMENT, Buffer.from(""), "rename"),
-                icon: richTextDocumentIcon,
-                label: "Rich Text Document",
-              },
-              {
-                action: () =>
-                  newPath(NEW_TEXT_DOCUMENT, Buffer.from(""), "rename"),
-                icon: textDocumentIcon,
-                label: "Text Document",
-              },
-            ],
-          },
+          ...(isReadOnly
+            ? []
+            : [
+                MENU_SEPERATOR,
+                ...FS_COMMANDS,
+                {
+                  action: () => open("Terminal", { url }),
+                  label: "Open Terminal here",
+                },
+                MENU_SEPERATOR,
+                {
+                  action: () => pasteToFolder(event),
+                  disabled: Object.keys(pasteList).length === 0,
+                  label: "Paste",
+                },
+                MENU_SEPERATOR,
+                {
+                  label: "New",
+                  menu: [
+                    {
+                      action: () => newEntry(NEW_FOLDER, undefined, event),
+                      icon: FOLDER_ICON,
+                      label: "Folder",
+                    },
+                    MENU_SEPERATOR,
+                    {
+                      action: () =>
+                        newEntry(NEW_RTF_DOCUMENT, Buffer.from(""), event),
+                      icon: getIconByFileExtension(".whtml"),
+                      label: "Rich Text Document",
+                    },
+                    {
+                      action: () =>
+                        newEntry(NEW_TEXT_DOCUMENT, Buffer.from(""), event),
+                      icon: getIconByFileExtension(".txt"),
+                      label: "Text Document",
+                    },
+                  ],
+                },
+                ...(isDesktop
+                  ? []
+                  : [
+                      MENU_SEPERATOR,
+                      {
+                        action: () => {
+                          const activePid = Object.keys(
+                            processesRef.current
+                          ).find(
+                            (p) => p === `Properties${PROCESS_DELIMITER}${url}`
+                          );
+
+                          if (activePid) {
+                            if (processesRef.current[activePid].minimized) {
+                              minimize(activePid);
+                            }
+
+                            setForegroundId(activePid);
+                          } else {
+                            open("Properties", { url });
+                          }
+                        },
+                        label: "Properties",
+                      },
+                    ]),
+              ]),
           ...(isDesktop
             ? [
                 MENU_SEPERATOR,
+                {
+                  action: async () => {
+                    if (!(await exists(INDEX_FILE))) {
+                      const response = await fetch(document.location.href);
+                      const buffer = Buffer.from(await response.arrayBuffer());
+
+                      await writeFile(INDEX_FILE, buffer);
+
+                      updateFolder(dirname(INDEX_FILE), basename(INDEX_FILE));
+                    }
+
+                    open("MonacoEditor", { url: INDEX_FILE });
+                    updateRecentFiles(INDEX_FILE, "MonacoEditor");
+                  },
+                  label: "View page source",
+                },
                 {
                   action: () => open("DevTools", { url: "dom" }),
                   label: "Inspect",
@@ -356,21 +582,32 @@ const useFolderContextMenu = (
       }),
     [
       addToFolder,
+      canCapture,
       captureScreen,
       contextMenu,
+      exists,
+      hasWebGPU,
       isAscending,
       isDesktop,
+      isStartMenu,
       mapFs,
-      newPath,
+      minimize,
+      newEntry,
       open,
       pasteList,
       pasteToFolder,
+      processesRef,
+      rootFs?.mntMap,
+      setForegroundId,
       setWallpaper,
       sortBy,
+      updateDesktopIconPositions,
       updateFolder,
+      updateRecentFiles,
       updateSorting,
       url,
       wallpaperImage,
+      writeFile,
     ]
   );
 };

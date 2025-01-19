@@ -1,5 +1,13 @@
-const { readdirSync, readFileSync, statSync, writeFileSync } = require("fs");
+const {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+  mkdirSync,
+} = require("fs");
 const { basename, extname, join } = require("path");
+const { parse } = require("ini");
 const lunr = require("lunr");
 
 const PUBLIC_PATH = "public";
@@ -18,12 +26,44 @@ const IGNORE_PATHS = [
   "Program Files",
   "System",
   "Users/Public/Icons",
+  "Users/Public/Pictures/Blog",
 ];
 
 const indexData = [];
 
+const normalizePath = (path) =>
+  path.replace(/\\/g, "/").replace(PUBLIC_PATH, "");
+
+const normalizeText = (text) =>
+  text.replace(/\r?\n|\r/g, " ").replace(/<\/?[^>]+(>|$)/g, "");
+
+const keyPathMap = {};
+
+const keyPathMapper = (path) =>
+  (keyPathMap[path] ||= Object.keys(keyPathMap).length);
+
 const createSearchIndex = (path) => {
-  readdirSync(path).forEach((entry) => {
+  const directoryContents = readdirSync(path);
+  const normalizedPath = normalizePath(path);
+
+  if (normalizedPath) {
+    const name = basename(path);
+
+    indexData.push({
+      name,
+      path: keyPathMapper(normalizedPath),
+      text: normalizeText(
+        [
+          name,
+          ...directoryContents.filter(
+            (entry) => !statSync(join(path, entry)).isDirectory()
+          ),
+        ].join(" ")
+      ),
+    });
+  }
+
+  directoryContents.forEach((entry) => {
     if (
       IGNORE_PATHS.some((ignoredPath) =>
         path.startsWith(join(PUBLIC_PATH, ignoredPath))
@@ -41,16 +81,26 @@ const createSearchIndex = (path) => {
       !IGNORE_FILES.has(entry) &&
       !SEARCH_EXTENSIONS.ignore.includes(extname(entry).toLowerCase())
     ) {
-      const keyPath = fullPath.replace(/\\/g, "/").replace(PUBLIC_PATH, "");
+      const keyPath = normalizePath(fullPath);
+
+      if (extname(entry).toLowerCase() === ".url") {
+        const {
+          InternetShortcut: { URL: url = "" },
+        } = parse(readFileSync(fullPath).toString());
+
+        if (url.length > 1 && url.startsWith("/")) {
+          return;
+        }
+      }
+
+      const name = basename(keyPath, extname(keyPath));
 
       indexData.push({
-        name: basename(keyPath, extname(keyPath)),
-        path: keyPath,
+        name,
+        path: keyPathMapper(keyPath),
         text: SEARCH_EXTENSIONS.index.includes(extname(entry).toLowerCase())
-          ? readFileSync(fullPath, "utf8")
-              .replace(/\r?\n|\r/g, " ")
-              .replace(/<\/?[^>]+(>|$)/g, "")
-          : undefined,
+          ? `${name} ${normalizeText(readFileSync(fullPath, "utf8"))}`
+          : name,
       });
     }
   });
@@ -66,9 +116,17 @@ const searchIndex = lunr(function () {
   indexData.forEach((doc) => this.add(doc));
 });
 
+if (!existsSync(join(PUBLIC_PATH, ".index"))) {
+  mkdirSync(join(PUBLIC_PATH, ".index"));
+}
+
+const searchJson = searchIndex.toJSON();
+
+searchJson.paths = Object.keys(keyPathMap);
+
 writeFileSync(
   join(PUBLIC_PATH, ".index/search.lunr.json"),
-  JSON.stringify(searchIndex.toJSON()),
+  JSON.stringify(searchJson),
   {
     flag: "w",
   }

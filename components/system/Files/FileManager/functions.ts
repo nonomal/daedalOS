@@ -1,18 +1,27 @@
-import type Stats from "browserfs/dist/node/core/node_fs_stats";
-import type {
-  FileReaders,
-  ObjectReaders,
-} from "components/system/Dialogs/Transfer/useTransferDialog";
-import { getModifiedTime } from "components/system/Files/FileEntry/functions";
-import type {
-  CompleteAction,
-  Files,
-} from "components/system/Files/FileManager/useFolder";
-import { COMPLETE_ACTION } from "components/system/Files/FileManager/useFolder";
-import type { SortBy } from "components/system/Files/FileManager/useSortBy";
 import { basename, dirname, extname, join } from "path";
-import { ONE_TIME_PASSIVE_EVENT, ROOT_SHORTCUT } from "utils/constants";
-import { haltEvent } from "utils/functions";
+import type Stats from "browserfs/dist/node/core/node_fs_stats";
+import {
+  type FileReaders,
+  type ObjectReader,
+  type ObjectReaders,
+} from "components/system/Dialogs/Transfer/useTransferDialog";
+import {
+  getFileType,
+  getModifiedTime,
+} from "components/system/Files/FileEntry/functions";
+import {
+  type Files,
+  type NewPath,
+  COMPLETE_ACTION,
+} from "components/system/Files/FileManager/useFolder";
+import { type SortBy } from "components/system/Files/FileManager/useSortBy";
+import {
+  MILLISECONDS_IN_MINUTE,
+  ONE_TIME_PASSIVE_EVENT,
+  ROOT_SHORTCUT,
+} from "utils/constants";
+import { getExtension, haltEvent, toSorted } from "utils/functions";
+import { get9pSize } from "contexts/fileSystem/core";
 
 export type FileStat = Stats & {
   systemShortcut?: boolean;
@@ -22,22 +31,45 @@ type FileStats = [string, FileStat];
 
 type SortFunction = (a: FileStats, b: FileStats) => number;
 
-export const sortByDate =
-  (directory: string) =>
-  ([aPath, aStats]: FileStats, [bPath, bStats]: FileStats): number =>
-    getModifiedTime(join(directory, aPath), aStats) -
-    getModifiedTime(join(directory, bPath), bStats);
-
 const sortByName = ([a]: FileStats, [b]: FileStats): number =>
   a.localeCompare(b, "en", { sensitivity: "base" });
 
-export const sortBySize = (
-  [, { size: aSize }]: FileStats,
-  [, { size: bSize }]: FileStats
-): number => aSize - bSize;
+export const sortByDate =
+  (directory: string) =>
+  (a: FileStats, b: FileStats): number => {
+    const [aPath, aStats] = a;
+    const [bPath, bStats] = b;
+    const diff =
+      getModifiedTime(join(directory, aPath), aStats) -
+      getModifiedTime(join(directory, bPath), bStats);
 
-const sortByType = ([a]: FileStats, [b]: FileStats): number =>
-  extname(a).localeCompare(extname(b), "en", { sensitivity: "base" });
+    return Math.abs(diff) < MILLISECONDS_IN_MINUTE ? sortByName(a, b) : diff;
+  };
+
+export const sortBySize = (
+  [aPath, aStats]: FileStats,
+  [bPath, bStats]: FileStats
+): number => {
+  let aSize = aStats.size;
+  let bSize = bStats.size;
+
+  if (aSize === -1) aSize = get9pSize(aPath);
+  if (bSize === -1) bSize = get9pSize(bPath);
+
+  return aSize - bSize;
+};
+
+const sortByType = (
+  [aPath, aStats]: FileStats,
+  [bPath, bStats]: FileStats
+): number => {
+  const aExt = aStats.isDirectory() ? "" : getExtension(aPath);
+  const bExt = bStats.isDirectory() ? "" : getExtension(bPath);
+  const aType = aExt ? getFileType(aExt) : "";
+  const bType = bExt ? getFileType(bExt) : "";
+
+  return aType.localeCompare(bType, "en", { sensitivity: "base" });
+};
 
 const sortSystemShortcuts = (
   [aName, { systemShortcut: aSystem = false }]: FileStats,
@@ -81,11 +113,11 @@ export const sortContents = (
   });
 
   const sortContent = (fileStats: FileStats[]): FileStats[] => {
-    fileStats.sort(sortByName);
+    const newFileStats = toSorted(fileStats, sortByName);
 
     return sortFunction && sortFunction !== sortByName
-      ? fileStats.sort(sortFunction)
-      : fileStats;
+      ? toSorted(newFileStats, sortFunction)
+      : newFileStats;
   };
   const sortedFolders = sortContent(folders);
   const sortedFiles = sortContent(files);
@@ -96,7 +128,7 @@ export const sortContents = (
   }
 
   return Object.fromEntries(
-    (ascending
+    (ascending || sortFunction === sortByType
       ? [...sortedFolders, ...sortedFiles]
       : [...sortedFiles, ...sortedFolders]
     ).sort(sortSystemShortcuts)
@@ -131,12 +163,9 @@ export const iterateFileName = (name: string, iteration: number): string => {
 export const createFileReaders = async (
   files: DataTransferItemList | FileList | never[],
   directory: string,
-  callback: (
-    fileName: string,
-    buffer?: Buffer,
-    completeAction?: CompleteAction
-  ) => void
+  callback: NewPath
 ): Promise<FileReaders> => {
+  const hasSingleFile = files.length === 1;
   const fileReaders: FileReaders = [];
   const addFile = (file: File, subFolder = ""): void => {
     const reader = new FileReader();
@@ -148,7 +177,7 @@ export const createFileReaders = async (
           callback(
             join(subFolder, file.name),
             Buffer.from(target.result),
-            files.length === 1 ? COMPLETE_ACTION.UPDATE_URL : undefined
+            hasSingleFile ? COMPLETE_ACTION.UPDATE_URL : undefined
           );
         }
       },
@@ -201,36 +230,31 @@ type EventData = {
 };
 
 export const getEventData = (
-  event: InputChangeEvent | never[] | React.DragEvent
+  event: DragEvent | InputChangeEvent | never[] | React.DragEvent
 ): EventData => {
+  const dataTransfer =
+    (event as React.DragEvent).nativeEvent?.dataTransfer ||
+    (event as DragEvent).dataTransfer;
   let files =
-    (event as InputChangeEvent).target?.files ||
-    (event as React.DragEvent).nativeEvent?.dataTransfer?.items ||
-    [];
+    (event as InputChangeEvent).target?.files || dataTransfer?.items || [];
+  const text = dataTransfer?.getData("application/json");
 
-  if (files instanceof DataTransferItemList) {
-    files = [...files].filter(
+  if (Array.isArray(files)) {
+    files = [...(files as unknown as DataTransferItemList)].filter(
       (item) => !("kind" in item) || item.kind === "file"
     ) as unknown as DataTransferItemList;
   }
-
-  const text =
-    files.length > 0
-      ? ""
-      : (event as React.DragEvent).dataTransfer?.getData("application/json");
 
   return { files, text };
 };
 
 export const handleFileInputEvent = (
   event: InputChangeEvent | React.DragEvent,
-  callback: (
-    fileName: string,
-    buffer?: Buffer,
-    completeAction?: CompleteAction
-  ) => Promise<void>,
+  callback: NewPath,
   directory: string,
-  openTransferDialog: (fileReaders: FileReaders | ObjectReaders) => void,
+  openTransferDialog: (
+    fileReaders: FileReaders | ObjectReaders
+  ) => Promise<void>,
   hasUpdateId = false
 ): void => {
   haltEvent(event);
@@ -240,8 +264,11 @@ export const handleFileInputEvent = (
   if (text) {
     try {
       const filePaths = JSON.parse(text) as string[];
+
+      if (!Array.isArray(filePaths) || filePaths.length === 0) return;
+
       const isSingleFile = filePaths.length === 1;
-      const objectReaders = filePaths.map((filePath) => {
+      const objectReaders = filePaths.map<ObjectReader>((filePath) => {
         let aborted = false;
 
         return {
@@ -250,6 +277,7 @@ export const handleFileInputEvent = (
           },
           directory,
           name: filePath,
+          operation: "Moving",
           read: async () => {
             if (aborted || dirname(filePath) === ".") return;
 
@@ -269,6 +297,13 @@ export const handleFileInputEvent = (
           callback(singleFile.name, undefined, COMPLETE_ACTION.UPDATE_URL);
         }
         if (hasUpdateId || singleFile.directory === singleFile.name) return;
+      }
+
+      if (
+        filePaths.every((filePath) => dirname(filePath) === directory) ||
+        filePaths.includes(directory)
+      ) {
+        return;
       }
 
       openTransferDialog(objectReaders);
@@ -299,4 +334,15 @@ export const findPathsRecursive = async (
   );
 
   return pathArrays.flat();
+};
+
+export const removeInvalidFilenameCharacters = (name = ""): string =>
+  name.replace(/["*/:<>?\\|]/g, "");
+
+export const getParentDirectories = (directory: string): string[] => {
+  if (directory === "/") return [];
+
+  const currentParent = dirname(directory);
+
+  return [currentParent, ...getParentDirectories(currentParent)];
 };

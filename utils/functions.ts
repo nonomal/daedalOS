@@ -1,20 +1,30 @@
-import type { DragPosition } from "components/system/Files/FileManager/useDraggableEntries";
-import type { Size } from "components/system/Window/RndWindow/useResizable";
-import type { Processes, RelativePosition } from "contexts/process/types";
-import type {
-  IconPosition,
-  IconPositions,
-  SortOrders,
-} from "contexts/session/types";
-import type { Position } from "eruda";
-import type HtmlToImage from "html-to-image";
 import { basename, dirname, extname, join } from "path";
+import { type Position } from "eruda";
+import type HtmlToImage from "html-to-image";
+import { type DragPosition } from "components/system/Files/FileManager/useDraggableEntries";
+import { type Size } from "components/system/Window/RndWindow/useResizable";
+import { type Processes, type RelativePosition } from "contexts/process/types";
 import {
+  type IconPosition,
+  type IconPositions,
+  type SortOrders,
+} from "contexts/session/types";
+import {
+  DEFAULT_LOCALE,
   HIGH_PRIORITY_REQUEST,
+  ICON_CACHE,
+  ICON_PATH,
+  ICON_RES_MAP,
+  MAX_ICON_SIZE,
   MAX_RES_ICON_OVERRIDE,
   ONE_TIME_PASSIVE_EVENT,
+  PREVENT_SCROLL,
+  SUPPORTED_ICON_SIZES,
   TASKBAR_HEIGHT,
+  TIMESTAMP_DATE_FORMAT,
+  USER_ICON_PATH,
 } from "utils/constants";
+import { LOCAL_HOST } from "components/apps/Browser/config";
 
 export const GOOGLE_SEARCH_QUERY = "https://www.google.com/search?igu=1&q=";
 
@@ -22,9 +32,9 @@ export const bufferToBlob = (buffer: Buffer, type?: string): Blob =>
   new Blob([buffer], type ? { type } : undefined);
 
 export const bufferToUrl = (buffer: Buffer, mimeType?: string): string =>
-  mimeType
-    ? `data:${mimeType};base64,${buffer.toString("base64")}`
-    : URL.createObjectURL(bufferToBlob(buffer));
+  mimeType === "image/svg+xml"
+    ? `data:${mimeType};base64,${window.btoa(buffer.toString())}`
+    : URL.createObjectURL(bufferToBlob(buffer, mimeType));
 
 let dpi: number;
 
@@ -36,30 +46,55 @@ export const getDpi = (): number => {
   return dpi;
 };
 
-export const toggleFullScreen = async (): Promise<void> => {
-  try {
-    await (document.fullscreenElement
-      ? document.exitFullscreen()
-      : document.documentElement.requestFullscreen());
-  } catch {
-    // Ignore failure to enter fullscreen
+export const getExtension = (url: string): string => {
+  let ext = extname(url);
+
+  if (!ext) {
+    const baseName = basename(url);
+
+    if (baseName.startsWith(".")) ext = baseName;
   }
+
+  return ext.toLowerCase();
 };
+
+export const sendMouseClick = (target: HTMLElement, count = 1): void => {
+  if (count === 0) return;
+
+  target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+  sendMouseClick(target, count - 1);
+};
+
+let visibleWindows: string[] = [];
 
 export const toggleShowDesktop = (
   processes: Processes,
+  stackOrder: string[],
   minimize: (id: string) => void
 ): void => {
-  const processArray = Object.entries(processes);
-  const allWindowsMinimized =
-    processArray.length > 0 &&
-    !processArray.some(([, { minimized }]) => !minimized);
+  const restoreWindows =
+    stackOrder.length > 0 &&
+    !stackOrder.some((pid) => !processes[pid]?.minimized);
+  const allWindows = restoreWindows ? [...stackOrder].reverse() : stackOrder;
 
-  processArray.forEach(
-    ([pid, { minimized }]) =>
-      (allWindowsMinimized || (!allWindowsMinimized && !minimized)) &&
-      minimize(pid)
-  );
+  if (!restoreWindows) visibleWindows = [];
+  else if (visibleWindows.length === 0) visibleWindows = allWindows;
+
+  allWindows.forEach((pid) => {
+    if (restoreWindows) {
+      if (visibleWindows.includes(pid)) minimize(pid);
+    } else if (!processes[pid]?.minimized) {
+      visibleWindows.push(pid);
+      minimize(pid);
+    }
+  });
+
+  if (restoreWindows) {
+    requestAnimationFrame(() =>
+      processes[stackOrder[0]]?.componentWindow?.focus(PREVENT_SCROLL)
+    );
+  }
 };
 
 export const imageSrc = (
@@ -68,15 +103,19 @@ export const imageSrc = (
   ratio: number,
   extension: string
 ): string => {
-  const imageName = basename(imagePath, ".webp");
+  const imageName = basename(imagePath, extension);
   const [expectedSize, maxIconSize] = MAX_RES_ICON_OVERRIDE[imageName] || [];
   const ratioSize = size * ratio;
-  const imageSize =
-    expectedSize === size ? Math.min(maxIconSize, ratioSize) : ratioSize;
+  const imageSize = Math.min(
+    MAX_ICON_SIZE,
+    expectedSize === size ? Math.min(maxIconSize, ratioSize) : ratioSize
+  );
 
   return `${join(
     dirname(imagePath),
-    `${imageSize}x${imageSize}`,
+    `${ICON_RES_MAP[imageSize] || imageSize}x${
+      ICON_RES_MAP[imageSize] || imageSize
+    }`,
     `${imageName}${extension}`
   ).replace(/\\/g, "/")}${ratio > 1 ? ` ${ratio}x` : ""}`;
 };
@@ -85,26 +124,51 @@ export const imageSrcs = (
   imagePath: string,
   size: number,
   extension: string,
-  failedUrls?: string[]
+  failedUrls = [] as string[]
 ): string => {
-  return [
+  const srcs = [
     imageSrc(imagePath, size, 1, extension),
     imageSrc(imagePath, size, 2, extension),
     imageSrc(imagePath, size, 3, extension),
   ]
     .filter(
-      (url) => !failedUrls?.length || failedUrls?.includes(url.split(" ")[0])
+      (url) => failedUrls.length === 0 || failedUrls.includes(url.split(" ")[0])
     )
     .join(", ");
+
+  return failedUrls?.includes(srcs) ? "" : srcs;
 };
 
-export const imageToBufferUrl = (
-  path: string,
-  buffer: Buffer | string
-): string =>
-  extname(path) === ".svg"
-    ? `data:image/svg+xml;base64,${window.btoa(buffer.toString())}`
-    : `data:image/png;base64,${buffer.toString("base64")}`;
+export const createFallbackSrcSet = (
+  src: string,
+  failedUrls: string[]
+): string => {
+  const srcExt = getExtension(src);
+  const failedSizes = new Set(
+    new Set(
+      failedUrls.map((failedUrl) => {
+        const fileName = basename(src, srcExt);
+
+        return Number(
+          failedUrl
+            .replace(`${ICON_PATH}/`, "")
+            .replace(`${USER_ICON_PATH}/`, "")
+            .replace(`/${fileName}.png`, "")
+            .replace(`/${fileName}.webp`, "")
+            .split("x")[0]
+        );
+      })
+    )
+  );
+  const possibleSizes = SUPPORTED_ICON_SIZES.filter(
+    (size) => !failedSizes.has(size)
+  );
+
+  return possibleSizes
+    .map((size) => imageSrc(src, size, 1, srcExt))
+    .reverse()
+    .join(", ");
+};
 
 export const blobToBase64 = (blob: Blob): Promise<string> =>
   new Promise((resolve) => {
@@ -114,17 +178,14 @@ export const blobToBase64 = (blob: Blob): Promise<string> =>
     fileReader.onloadend = () => resolve(fileReader.result as string);
   });
 
-type JxlDecodeResponse = { data: { imgData: ImageData } };
+export const blobToBuffer = async (blob?: Blob | null): Promise<Buffer> =>
+  blob ? Buffer.from(await blob.arrayBuffer()) : Buffer.from("");
 
-export const decodeJxl = async (image: Buffer): Promise<ImageData> =>
-  new Promise((resolve) => {
-    const worker = new Worker("System/JXL.js/jxl_dec.js");
-
-    worker.postMessage({ image, jxlSrc: "image.jxl" });
-    worker.addEventListener("message", (message: JxlDecodeResponse) =>
-      resolve(message?.data?.imgData)
-    );
-  });
+export const canvasToBuffer = (canvas?: HTMLCanvasElement): Buffer =>
+  Buffer.from(
+    canvas?.toDataURL("image/png").replace("data:image/png;base64,", "") || "",
+    "base64"
+  );
 
 export const imgDataToBuffer = (imageData: ImageData): Buffer => {
   const canvas = document.createElement("canvas");
@@ -133,22 +194,76 @@ export const imgDataToBuffer = (imageData: ImageData): Buffer => {
   canvas.height = imageData.height;
   canvas.getContext("2d")?.putImageData(imageData, 0, 0);
 
-  return Buffer.from(
-    canvas?.toDataURL("image/png").replace("data:image/png;base64,", ""),
-    "base64"
-  );
+  return canvasToBuffer(canvas);
 };
 
 export const cleanUpBufferUrl = (url: string): void => URL.revokeObjectURL(url);
+
+const rowBlank = (imageData: ImageData, width: number, y: number): boolean => {
+  for (let x = 0; x < width; ++x) {
+    if (imageData.data[y * width * 4 + x * 4 + 3] !== 0) return false;
+  }
+  return true;
+};
+
+const columnBlank = (
+  imageData: ImageData,
+  width: number,
+  x: number,
+  top: number,
+  bottom: number
+): boolean => {
+  for (let y = top; y < bottom; ++y) {
+    if (imageData.data[y * width * 4 + x * 4 + 3] !== 0) return false;
+  }
+  return true;
+};
+
+export const trimCanvasToTopLeft = (
+  canvas: HTMLCanvasElement
+): HTMLCanvasElement => {
+  const ctx = canvas.getContext("2d", {
+    alpha: true,
+    desynchronized: true,
+    willReadFrequently: true,
+  });
+
+  if (!ctx) return canvas;
+
+  const { height, ownerDocument, width } = canvas;
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const { height: bottom, width: right } = imageData;
+
+  let top = 0;
+  let left = 0;
+
+  while (top < bottom && rowBlank(imageData, width, top)) ++top;
+  while (left < right && columnBlank(imageData, width, left, top, bottom)) {
+    ++left;
+  }
+
+  const trimmed = ctx.getImageData(left, top, right - left, bottom - top);
+  const copy = ownerDocument.createElement("canvas");
+  const copyCtx = copy.getContext("2d");
+
+  if (!copyCtx) return canvas;
+
+  copy.width = trimmed.width;
+  copy.height = trimmed.height;
+  copyCtx.putImageData(trimmed, 0, 0);
+
+  return copy;
+};
 
 const loadScript = (
   src: string,
   defer?: boolean,
   force?: boolean,
-  asModule?: boolean
+  asModule?: boolean,
+  contentWindow = window as Window
 ): Promise<Event> =>
   new Promise((resolve, reject) => {
-    const loadedScripts = [...document.scripts];
+    const loadedScripts = [...contentWindow.document.scripts];
     const currentScript = loadedScripts.find((loadedScript) =>
       loadedScript.src.endsWith(src)
     );
@@ -162,9 +277,7 @@ const loadScript = (
       currentScript.remove();
     }
 
-    const script = document.createElement(
-      "script"
-    ) as HTMLElementWithPriority<HTMLScriptElement>;
+    const script = contentWindow.document.createElement("script");
 
     script.async = false;
     if (defer) script.defer = true;
@@ -174,13 +287,16 @@ const loadScript = (
     script.addEventListener("error", reject, ONE_TIME_PASSIVE_EVENT);
     script.addEventListener("load", resolve, ONE_TIME_PASSIVE_EVENT);
 
-    document.head.append(script);
+    contentWindow.document.head.append(script);
   });
 
-const loadStyle = (href: string): Promise<Event> =>
+const loadStyle = (
+  href: string,
+  contentWindow = window as Window
+): Promise<Event> =>
   new Promise((resolve, reject) => {
     const loadedStyles = [
-      ...document.querySelectorAll("link[rel=stylesheet]"),
+      ...contentWindow.document.querySelectorAll("link[rel=stylesheet]"),
     ] as HTMLLinkElement[];
 
     if (loadedStyles.some((loadedStyle) => loadedStyle.href.endsWith(href))) {
@@ -188,9 +304,7 @@ const loadStyle = (href: string): Promise<Event> =>
       return;
     }
 
-    const link = document.createElement(
-      "link"
-    ) as HTMLElementWithPriority<HTMLLinkElement>;
+    const link = contentWindow.document.createElement("link");
 
     link.rel = "stylesheet";
     link.fetchPriority = "high";
@@ -198,21 +312,22 @@ const loadStyle = (href: string): Promise<Event> =>
     link.addEventListener("error", reject, ONE_TIME_PASSIVE_EVENT);
     link.addEventListener("load", resolve, ONE_TIME_PASSIVE_EVENT);
 
-    document.head.append(link);
+    contentWindow.document.head.append(link);
   });
 
 export const loadFiles = async (
   files?: string[],
   defer?: boolean,
   force?: boolean,
-  asModule?: boolean
+  asModule?: boolean,
+  contentWindow?: Window
 ): Promise<void> =>
   !files || files.length === 0
     ? Promise.resolve()
     : files.reduce(async (_promise, file) => {
-        await (extname(file).toLowerCase() === ".css"
-          ? loadStyle(encodeURI(file))
-          : loadScript(encodeURI(file), defer, force, asModule));
+        await (getExtension(file) === ".css"
+          ? loadStyle(encodeURI(file), contentWindow)
+          : loadScript(encodeURI(file), defer, force, asModule, contentWindow));
       }, Promise.resolve());
 
 export const getHtmlToImage = async (): Promise<
@@ -240,14 +355,20 @@ export const getWindowViewport = (): Position => ({
 });
 
 export const calcInitialPosition = (
-  relativePosition: RelativePosition,
-  container: HTMLElement
-): Position => ({
-  x: relativePosition.left || viewWidth() - (relativePosition.right || 0),
-  y:
-    relativePosition.top ||
-    viewHeight() - (relativePosition.bottom || 0) - container.offsetHeight,
-});
+  { offsetHeight }: HTMLElement,
+  { right = 0, left = 0, top = 0, bottom = 0 } = {} as RelativePosition,
+  { width = 0, height = 0 } = {} as Size
+): Position => {
+  const [vh, vw] = [viewHeight(), viewWidth()];
+
+  return {
+    x: pxToNum(width) >= vw ? 0 : left || vw - right,
+    y:
+      pxToNum(height) + TASKBAR_HEIGHT >= vh
+        ? 0
+        : top || vh - bottom - offsetHeight,
+  };
+};
 
 const GRID_TEMPLATE_ROWS = "grid-template-rows";
 
@@ -286,7 +407,7 @@ const calcGridDropPosition = (
   };
 };
 
-const updateIconPositionsIfEmpty = (
+export const updateIconPositionsIfEmpty = (
   url: string,
   gridElement: HTMLElement | null,
   iconPositions: IconPositions,
@@ -386,9 +507,10 @@ export const updateIconPositions = (
   sortOrders: SortOrders,
   dragPosition: DragPosition,
   draggedEntries: string[],
-  setIconPositions: React.Dispatch<React.SetStateAction<IconPositions>>
+  setIconPositions: React.Dispatch<React.SetStateAction<IconPositions>>,
+  exists: (path: string) => Promise<boolean>
 ): void => {
-  if (!gridElement) return;
+  if (!gridElement || draggedEntries.length === 0) return;
 
   const currentIconPositions = updateIconPositionsIfEmpty(
     directory,
@@ -397,15 +519,12 @@ export const updateIconPositions = (
     sortOrders
   );
   const gridDropPosition = calcGridDropPosition(gridElement, dragPosition);
-
-  if (
-    draggedEntries.length > 0 &&
-    !Object.values(currentIconPositions).some(
-      ({ gridColumnStart, gridRowStart }) =>
-        gridColumnStart === gridDropPosition.gridColumnStart &&
-        gridRowStart === gridDropPosition.gridRowStart
-    )
-  ) {
+  const conflictingIcon = Object.entries(currentIconPositions).find(
+    ([, { gridColumnStart, gridRowStart }]) =>
+      gridColumnStart === gridDropPosition.gridColumnStart &&
+      gridRowStart === gridDropPosition.gridRowStart
+  );
+  const processIconMove = (): void => {
     const targetFile =
       draggedEntries.find((entry) =>
         entry.startsWith(document.activeElement?.textContent || "")
@@ -456,32 +575,90 @@ export const updateIconPositions = (
         )
       ),
     });
+  };
+
+  if (conflictingIcon) {
+    const [conflictingIconPath] = conflictingIcon;
+
+    exists(conflictingIconPath).then((pathExists) => {
+      if (!pathExists) {
+        delete currentIconPositions[conflictingIconPath];
+        processIconMove();
+      }
+    });
+  } else {
+    processIconMove();
   }
 };
 
-export const isCanvasDrawn = (canvas?: HTMLCanvasElement | null): boolean =>
-  canvas instanceof HTMLCanvasElement &&
-  Boolean(
+export const isCanvasDrawn = (canvas?: HTMLCanvasElement | null): boolean => {
+  if (!(canvas instanceof HTMLCanvasElement)) return false;
+  if (canvas.width === 0 || canvas.height === 0) return false;
+
+  const { data: pixels = [] } =
     canvas
-      .getContext("2d", {
-        willReadFrequently: true,
-      })
-      ?.getImageData(0, 0, canvas.width, canvas.height)
-      .data.some((channel) => channel !== 0)
-  );
+      .getContext("2d", { willReadFrequently: true })
+      ?.getImageData(0, 0, canvas.width, canvas.height) || {};
+
+  if (pixels.length === 0) return false;
+
+  const bwPixels: Record<number, number> = { 0: 0, 255: 0 };
+
+  for (const pixel of pixels) {
+    if (pixel !== 0 && pixel !== 255) return true;
+
+    bwPixels[pixel] += 1;
+  }
+
+  const isBlankCanvas =
+    bwPixels[0] === pixels.length ||
+    bwPixels[255] === pixels.length ||
+    (bwPixels[255] + bwPixels[0] === pixels.length &&
+      bwPixels[0] / 3 === bwPixels[255]);
+
+  return !isBlankCanvas;
+};
 
 const bytesInKB = 1024;
 const bytesInMB = 1022976; // 1024 * 999
 const bytesInGB = 1047527424; // 1024 * 1024 * 999
 const bytesInTB = 1072668082176; // 1024 * 1024 * 1024 * 999
 
-const formatNumber = (number: number): string =>
-  new Intl.NumberFormat("en-US", {
-    maximumSignificantDigits: number < 1 ? 2 : 3,
-    minimumSignificantDigits: number < 1 ? 2 : 3,
-  }).format(Number(number.toFixed(4).slice(0, -2)));
+const formatNumber = (number: number, roundUpNumber = false): string => {
+  const formattedNumber = new Intl.NumberFormat(
+    "en-US",
+    roundUpNumber
+      ? undefined
+      : {
+          maximumSignificantDigits: number < 1 ? 2 : 4,
+          minimumSignificantDigits: number < 1 ? 2 : 3,
+        }
+  ).format(
+    roundUpNumber
+      ? Math.ceil(Number(number))
+      : Number(number.toFixed(4).slice(0, -2))
+  );
 
-export const getFormattedSize = (size = 0): string => {
+  if (roundUpNumber) return formattedNumber;
+
+  const [integer, decimal] = formattedNumber.split(".");
+
+  if (integer.length === 3) return integer;
+  if (integer.length === 2 && decimal.length === 2) {
+    return `${integer}.${decimal[0]}`;
+  }
+
+  return formattedNumber;
+};
+
+export const getFormattedSize = (size = 0, asKB = false): string => {
+  if (asKB) {
+    if (size === 0) return "0 KB";
+    if (size <= bytesInKB) return "1 KB";
+
+    return `${formatNumber(size / bytesInKB, true)} KB`;
+  }
+
   if (size === 1) return "1 byte";
   if (size < bytesInKB) return `${size} bytes`;
   if (size < bytesInMB) return `${formatNumber(size / bytesInKB)} KB`;
@@ -503,7 +680,7 @@ export const getTZOffsetISOString = (): string => {
   ).toISOString();
 };
 
-export const getUrlOrSearch = async (input: string): Promise<string> => {
+export const getUrlOrSearch = async (input: string): Promise<URL> => {
   const isIpfs = input.startsWith("ipfs://");
   const hasHttpSchema =
     input.startsWith("http://") || input.startsWith("https://");
@@ -512,33 +689,58 @@ export const getUrlOrSearch = async (input: string): Promise<string> => {
     input.endsWith(".ca") ||
     input.endsWith(".net") ||
     input.endsWith(".org");
+  const isLocalHost = LOCAL_HOST.has(input);
 
   try {
-    const { href } = new URL(
-      hasHttpSchema || !hasTld || isIpfs ? input : `https://${input}`
+    const url = new URL(
+      !isLocalHost && (hasHttpSchema || !hasTld || isIpfs)
+        ? input
+        : `https://${input}`
     );
 
     if (isIpfs) {
       const { getIpfsGatewayUrl } = await import("utils/ipfs");
 
-      return await getIpfsGatewayUrl(href);
+      return new URL(await getIpfsGatewayUrl(url.href));
     }
 
-    return href;
+    return url;
   } catch {
-    return `${GOOGLE_SEARCH_QUERY}${input}`;
+    return new URL(`${GOOGLE_SEARCH_QUERY}${input}`);
   }
 };
 
-export const isFirefox = (): boolean =>
-  typeof window !== "undefined" && /firefox/i.test(window.navigator.userAgent);
+let IS_FIREFOX: boolean;
 
-export const isSafari = (): boolean =>
-  typeof window !== "undefined" &&
-  /^((?!chrome|android).)*safari/i.test(window.navigator.userAgent);
+export const isFirefox = (): boolean => {
+  if (typeof window === "undefined") return false;
+  if (IS_FIREFOX ?? false) return IS_FIREFOX;
+
+  IS_FIREFOX = /firefox/i.test(window.navigator.userAgent);
+
+  return IS_FIREFOX;
+};
+
+let IS_SAFARI: boolean;
+
+export const isSafari = (): boolean => {
+  if (typeof window === "undefined") return false;
+  if (IS_SAFARI ?? false) return IS_SAFARI;
+
+  IS_SAFARI = /^(?:(?!chrome|android).)*safari/i.test(
+    window.navigator.userAgent
+  );
+
+  return IS_SAFARI;
+};
 
 export const haltEvent = (
-  event: Event | React.DragEvent | React.KeyboardEvent | React.MouseEvent
+  event:
+    | Event
+    | React.DragEvent
+    | React.FocusEvent
+    | React.KeyboardEvent
+    | React.MouseEvent
 ): void => {
   try {
     if (event.cancelable) {
@@ -585,7 +787,10 @@ export const label = (value: string): React.HTMLAttributes<HTMLElement> => ({
 });
 
 export const isYouTubeUrl = (url: string): boolean =>
-  url.includes("youtube.com/") || url.includes("youtu.be/");
+  (url.includes("youtube.com/") || url.includes("youtu.be/")) &&
+  !url.includes("youtube.com/@") &&
+  !url.includes("/channel/") &&
+  !url.includes("/c/");
 
 export const getYouTubeUrlId = (url: string): string => {
   try {
@@ -599,11 +804,157 @@ export const getYouTubeUrlId = (url: string): string => {
   return "";
 };
 
+export const getMimeType = (url: string, ext?: string): string => {
+  switch (ext ? ext.toLowerCase() : getExtension(url)) {
+    case ".ani":
+    case ".cur":
+    case ".ico":
+      return "image/vnd.microsoft.icon";
+    case ".cache":
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".json":
+      return "application/json";
+    case ".html":
+    case ".htm":
+    case ".whtml":
+      return "text/html";
+    case ".m3u":
+    case ".m3u8":
+      return "application/x-mpegURL";
+    case ".m4v":
+    case ".mkv":
+    case ".mov":
+    case ".mp4":
+      return "video/mp4";
+    case ".mp3":
+      return "audio/mpeg";
+    case ".oga":
+      return "audio/ogg";
+    case ".ogg":
+    case ".ogm":
+    case ".ogv":
+      return "video/ogg";
+    case ".pdf":
+      return "application/pdf";
+    case ".png":
+      return "image/png";
+    case ".svg":
+      return "image/svg+xml";
+    case ".md":
+    case ".txt":
+      return "text/plain";
+    case ".wav":
+      return "audio/wav";
+    case ".webm":
+      return "video/webm";
+    case ".webp":
+      return "image/webp";
+    case ".xml":
+      return "application/xml";
+    case ".wsz":
+    case ".jsdos":
+    case ".zip":
+      return "application/zip";
+    default:
+      return "";
+  }
+};
+
+export const isDynamicIcon = (icon?: string): boolean =>
+  typeof icon === "string" &&
+  (icon.startsWith(ICON_PATH) ||
+    (icon.startsWith(USER_ICON_PATH) && !icon.startsWith(ICON_CACHE)));
+
+const getPreloadedLinks = (): HTMLLinkElement[] => [
+  ...document.querySelectorAll<HTMLLinkElement>("link[rel=preload]"),
+];
+
+let HAS_MODULE_PRELOAD_SUPPORT = false;
+
+const supportsModulePreload = (): boolean => {
+  if (HAS_MODULE_PRELOAD_SUPPORT) return true;
+
+  try {
+    HAS_MODULE_PRELOAD_SUPPORT = Boolean(
+      document.createElement("link").relList?.supports?.("modulepreload")
+    );
+  } catch {
+    // Ignore failure to check for modulepreload support
+  }
+
+  return HAS_MODULE_PRELOAD_SUPPORT;
+};
+
+let HAS_WEBP_SUPPORT = false;
+
+export const supportsWebp = (): boolean => {
+  if (HAS_WEBP_SUPPORT) return true;
+
+  try {
+    HAS_WEBP_SUPPORT = document
+      .createElement("canvas")
+      .toDataURL("image/webp")
+      .startsWith("data:image/webp");
+  } catch {
+    // Ignore failure to check for WebP support
+  }
+
+  return HAS_WEBP_SUPPORT;
+};
+
+const supportsImageSrcSet = (): boolean =>
+  Object.prototype.hasOwnProperty.call(
+    HTMLLinkElement.prototype,
+    "imageSrcset"
+  );
+
+export const preloadImage = (
+  image: string,
+  id?: string,
+  fetchPriority: "auto" | "high" | "low" = "high"
+): void => {
+  const extension = getExtension(image);
+  const link = document.createElement("link");
+
+  link.as = "image";
+  if (id) link.id = id;
+  link.fetchPriority = fetchPriority;
+  link.rel = "preload";
+  link.type = getMimeType(extension);
+
+  if (isDynamicIcon(image)) {
+    if (supportsImageSrcSet()) {
+      link.imageSrcset = imageSrcs(image, 48, extension);
+    } else {
+      const [href] = imageSrc(image, 48, getDpi(), extension).split(" ");
+
+      link.href = href;
+    }
+  } else {
+    link.href = image;
+  }
+
+  const preloadedLinks = getPreloadedLinks();
+
+  if (
+    !preloadedLinks.some(
+      (preloadedLink) =>
+        (link.imageSrcset &&
+          preloadedLink?.imageSrcset?.endsWith(link.imageSrcset)) ||
+        (link.href && preloadedLink?.href?.endsWith(link.href))
+    )
+  ) {
+    document.head.append(link);
+  }
+};
+
 export const preloadLibs = (libs: string[] = []): void => {
   const scripts = [...document.scripts];
-  const preloadedLinks = [
-    ...document.querySelectorAll("link[rel=preload]"),
-  ] as HTMLLinkElement[];
+  const preloadedLinks = getPreloadedLinks();
 
   // eslint-disable-next-line unicorn/no-array-callback-reference
   libs.map(encodeURI).forEach((lib) => {
@@ -614,15 +965,13 @@ export const preloadLibs = (libs: string[] = []): void => {
       return;
     }
 
-    const link = document.createElement(
-      "link"
-    ) as HTMLElementWithPriority<HTMLLinkElement>;
+    const link = document.createElement("link");
 
     link.fetchPriority = "high";
     link.rel = "preload";
     link.href = lib;
 
-    switch (extname(lib).toLowerCase()) {
+    switch (getExtension(lib)) {
       case ".css":
         link.as = "style";
         break;
@@ -630,7 +979,13 @@ export const preloadLibs = (libs: string[] = []): void => {
       case ".html":
         link.rel = "prerender";
         break;
-      case ".url":
+      case ".js":
+        if (supportsModulePreload()) {
+          link.rel = "modulepreload";
+        }
+        break;
+      case ".json":
+      case ".wasm":
         link.as = "fetch";
         link.crossOrigin = "anonymous";
         break;
@@ -643,14 +998,16 @@ export const preloadLibs = (libs: string[] = []): void => {
   });
 };
 
-export const getGifJs = async (): Promise<GIF> => {
+type GIFWithWorkers = GIF & { freeWorkers: Worker[] };
+
+export const getGifJs = async (): Promise<GIFWithWorkers> => {
   const { default: GIFInstance } = await import("gif.js");
 
   return new GIFInstance({
     quality: 10,
     workerScript: "Program Files/gif.js/gif.worker.js",
     workers: Math.max(Math.floor(navigator.hardwareConcurrency / 4), 1),
-  });
+  }) as GIFWithWorkers;
 };
 
 export const jsonFetch = async (
@@ -662,8 +1019,40 @@ export const jsonFetch = async (
   return json || {};
 };
 
-export const isCanvasEmpty = (canvas: HTMLCanvasElement): boolean =>
-  !canvas
-    .getContext("2d")
-    ?.getImageData(0, 0, canvas.width, canvas.height)
-    .data.some(Boolean);
+export const generatePrettyTimestamp = (): string =>
+  new Intl.DateTimeFormat(DEFAULT_LOCALE, TIMESTAMP_DATE_FORMAT)
+    .format(new Date())
+    .replace(/[/:]/g, "-")
+    .replace(",", "");
+
+export const isFileSystemMappingSupported = (): boolean =>
+  typeof FileSystemHandle === "function" && "showDirectoryPicker" in window;
+
+export const hasFinePointer = (): boolean =>
+  window.matchMedia("(pointer: fine)").matches;
+
+export const isBeforeBg = (): boolean =>
+  document.documentElement.style.getPropertyValue(
+    "--before-background-opacity"
+  ) === "1";
+
+export const parseBgPosition = (position?: string): `${number}%` | "center" => {
+  if (typeof position === "string") {
+    const positionNum = Number.parseFloat(position);
+
+    if (!Number.isNaN(positionNum) && positionNum >= 0 && positionNum <= 100) {
+      return `${positionNum}%`;
+    }
+  }
+
+  return "center";
+};
+
+export const toSorted = <T>(
+  array: T[],
+  compareFn?: (a: T, b: T) => number
+): T[] => [...array].sort(compareFn);
+
+export const notFound = (resource: string): void =>
+  // eslint-disable-next-line no-alert
+  alert(`Can't find '${resource}'. Check the spelling and try again.`);

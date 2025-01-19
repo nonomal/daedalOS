@@ -1,11 +1,14 @@
 import styled from "styled-components";
 
 const StyledFileEntry = styled.li`
+  display: flex;
+  flex-direction: column;
+
   figure {
-    border: 1px solid transparent;
     display: flex;
     height: 36px;
     padding-bottom: 1px;
+    padding-left: 1px;
     place-items: center;
 
     figcaption {
@@ -22,7 +25,13 @@ const StyledFileEntry = styled.li`
       height: 8px;
       margin-left: auto;
       margin-right: 8px;
+      pointer-events: none;
       width: 8px;
+    }
+
+    picture,
+    svg {
+      transition: margin 0.25s ease-out;
     }
 
     &:active {
@@ -38,11 +47,24 @@ const StyledFileEntry = styled.li`
       svg {
         margin-right: 12px;
       }
+
+      picture,
+      svg {
+        transition: none;
+      }
     }
 
-    &:hover {
-      background-color: hsla(0, 0%, 35%, 70%);
-      border: 1px solid hsla(0, 0%, 45%, 70%);
+    @media (pointer: fine) {
+      &:hover {
+        background-color: hsla(0, 0%, 35%, 70%);
+      }
+    }
+
+    @media (pointer: coarse) {
+      &:active {
+        background-color: hsla(0, 0%, 35%, 70%);
+        border: 1px solid hsla(0, 0%, 45%, 70%);
+      }
     }
   }
 `;

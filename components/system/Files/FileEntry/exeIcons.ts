@@ -1,12 +1,11 @@
-import type {
-  IconGroupEntry,
-  IconGroupItem,
-  ResourceEntry,
+import {
+  type IconGroupEntry,
+  type IconGroupItem,
+  type ResourceEntry,
 } from "resedit/dist/resource";
 
 const RESERVED = 0;
 const ICON_TYPE = {
-  CUR: 2,
   ICO: 1,
 };
 
@@ -24,7 +23,7 @@ const createIconDirEntry = (
 ): Uint8Array =>
   Uint8Array.from([
     width,
-    bitCount === 32 && height === width * 2 ? width : height,
+    height === width * 2 ? width : height,
     colors,
     RESERVED,
     ...new Uint8Array(Uint16Array.from([planes]).buffer),
@@ -37,9 +36,19 @@ const ICONDIR_LENGTH = 6;
 const ICONDIRENTRY_LENGTH = 16;
 const RC_ICON = 3;
 
+let lockIconExtraction = false;
+
 export const extractExeIcon = async (
   exeData: Buffer
 ): Promise<Buffer | undefined> => {
+  if (lockIconExtraction) {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => extractExeIcon(exeData).then(resolve));
+    });
+  }
+
+  lockIconExtraction = true;
+
   const ResEdit = await import("resedit");
   let iconGroupEntry: IconGroupEntry;
   let entries: ResourceEntry[];
@@ -63,8 +72,11 @@ export const extractExeIcon = async (
       try {
         const { "/.rsrc/ICON/1.ico": icon } =
           (await unarchive("data.exe", exeData)) || {};
+        const iconBuffer = Buffer.from(icon);
 
-        return Buffer.from(icon);
+        lockIconExtraction = false;
+
+        return iconBuffer;
       } catch {
         // Ignore error extracting EXE
       }
@@ -73,7 +85,11 @@ export const extractExeIcon = async (
     return undefined;
   }
 
-  if (!iconGroupEntry?.icons) return undefined;
+  if (!iconGroupEntry?.icons) {
+    lockIconExtraction = false;
+
+    return undefined;
+  }
 
   const iconDataOffset =
     ICONDIR_LENGTH + ICONDIRENTRY_LENGTH * iconGroupEntry.icons.length;
@@ -83,7 +99,9 @@ export const extractExeIcon = async (
   );
   const iconHeader = iconGroupEntry.icons.reduce(
     (accHeader, iconBitmapInfo, index) => {
-      currentIconOffset += index ? iconData[index - 1]?.bin.byteLength ?? 0 : 0;
+      currentIconOffset += index
+        ? (iconData[index - 1]?.bin.byteLength ?? 0)
+        : 0;
 
       return Buffer.concat([
         accHeader,
@@ -93,11 +111,15 @@ export const extractExeIcon = async (
     createIconHeader(iconGroupEntry.icons.length)
   );
 
-  return Buffer.from(
+  const combinedIconBuffer = Buffer.from(
     iconData.reduce(
       (accIcon, iconItem) =>
         Buffer.concat([accIcon, Buffer.from((iconItem as ResourceEntry).bin)]),
       iconHeader
     )
   );
+
+  lockIconExtraction = false;
+
+  return combinedIconBuffer;
 };

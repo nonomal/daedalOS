@@ -1,8 +1,9 @@
-import { DX_BALL_GLOBALS, SAVE_PATH } from "components/apps/DX-Ball/constants";
-import { useFileSystem } from "contexts/fileSystem";
-import { useProcesses } from "contexts/process";
 import { basename, dirname } from "path";
 import { useEffect, useRef } from "react";
+import { DX_BALL_GLOBALS, SAVE_PATH } from "components/apps/DX-Ball/constants";
+import { type ContainerHookProps } from "components/system/Apps/AppContainer";
+import { useFileSystem } from "contexts/fileSystem";
+import { useProcesses } from "contexts/process";
 import { TRANSITIONS_IN_MILLISECONDS } from "utils/constants";
 import { loadFiles } from "utils/functions";
 import { cleanUpGlobals } from "utils/globals";
@@ -11,23 +12,21 @@ declare global {
   interface Window {
     DXBall: {
       close: () => void;
-      init: (saveFunction: (name: string, score: string) => string) => void;
+      init: (
+        loadedFunction: () => void,
+        saveFunction: (name: string, score: string) => string
+      ) => void;
     };
   }
 }
 
-const useDXBall = (
-  id: string,
-  _url: string,
-  _containerRef: React.MutableRefObject<HTMLDivElement | null>,
-  setLoading: React.Dispatch<React.SetStateAction<boolean>>
-): void => {
+const useDXBall = ({ id, setLoading }: ContainerHookProps): void => {
   const { readFile, writeFile, updateFolder } = useFileSystem();
   const {
     processes: { [id]: process },
   } = useProcesses();
   const { closing, libs = [] } = process || {};
-  const records = useRef<string>();
+  const records = useRef("");
   const libLoadingRef = useRef(true);
 
   useEffect(() => {
@@ -45,26 +44,27 @@ const useDXBall = (
       libLoadingRef.current = false;
 
       loadFiles(libs, undefined, true).then(() => {
-        window.DXBall?.init((name, score) => {
-          records.current = `${
-            records.current ? `${records.current}\r` : ""
-          }#&${score}&${name}`
-            .split("\r")
-            .map((record) => record.split("&"))
-            .sort(([, scoreA], [, scoreB]) => Number(scoreB) - Number(scoreA))
-            .map(
-              ([, recordScore, recordName], index) =>
-                `${index}&${recordScore}&${recordName}`
-            )
-            .join("\r");
+        window.DXBall?.init(
+          () => setLoading(false),
+          (name, score) => {
+            records.current = `${
+              records.current ? `${records.current}\r` : ""
+            }#&${score}&${name}`
+              .split("\r")
+              .map((record) => record.split("&"))
+              .sort(([, scoreA], [, scoreB]) => Number(scoreB) - Number(scoreA))
+              .map(
+                ([, recordScore, recordName], index) =>
+                  `${index}&${recordScore}&${recordName}`
+              )
+              .join("\r");
 
-          writeFile(SAVE_PATH, records.current, true);
-          updateFolder(dirname(SAVE_PATH), basename(SAVE_PATH));
+            writeFile(SAVE_PATH, records.current, true);
+            updateFolder(dirname(SAVE_PATH), basename(SAVE_PATH));
 
-          return `${records.current}\r`;
-        });
-
-        setLoading(false);
+            return `${records.current}\r`;
+          }
+        );
       });
     }
   }, [libs, setLoading, updateFolder, writeFile]);

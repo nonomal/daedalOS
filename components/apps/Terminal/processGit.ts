@@ -1,15 +1,14 @@
-import type { FSModule } from "browserfs/dist/node/core/FS";
-import { help } from "components/apps/Terminal/functions";
-import type { LocalEcho } from "components/apps/Terminal/types";
-import type index from "isomorphic-git";
-import type {
-  AuthCallback,
-  GitAuth,
-  MessageCallback,
-  ProgressCallback,
-} from "isomorphic-git";
-import type { ParsedArgs } from "minimist";
 import { join } from "path";
+import { type FSModule } from "browserfs/dist/node/core/FS";
+import {
+  type AuthCallback,
+  type GitAuth,
+  type MessageCallback,
+  type ProgressCallback,
+  type default as index,
+} from "isomorphic-git";
+import { type ParsedArgs } from "minimist";
+import { help } from "components/apps/Terminal/functions";
 
 const corsProxy = "https://cors.isomorphic-git.org";
 
@@ -45,7 +44,7 @@ type GitFunction = (options: GitOptions) => Promise<string | void>;
 const processGit = async (
   [command, ...args]: string[],
   cd: string,
-  localEcho: LocalEcho,
+  printLn: (message: string) => void,
   fs: FSModule,
   updateFolder: (folder: string, newFile?: string, oldFile?: string) => void
 ): Promise<void> => {
@@ -58,15 +57,15 @@ const processGit = async (
       ParsedArgs;
     const onAuth: AuthCallback = () => ({ password, username });
     const onMessage: MessageCallback = (message = "") =>
-      localEcho.println(`remote: ${message.trim()}`);
+      printLn(`remote: ${message.trim()}`);
     const events: string[] = [];
     const onProgress: ProgressCallback = ({ phase }): void => {
       if (events[events.length - 1] !== phase) {
-        localEcho.println(phase);
+        printLn(phase);
         events.push(phase);
       }
     };
-    const options = {
+    const options: GitOptions = {
       ...cliArgs,
       corsProxy,
       dir: cd,
@@ -78,14 +77,25 @@ const processGit = async (
     };
 
     if (command === "clone") {
+      if (
+        !options.url &&
+        cliArgs._ &&
+        Array.isArray(cliArgs._) &&
+        cliArgs._.length === 1
+      ) {
+        const [url] = cliArgs._;
+
+        options.url = url;
+      }
+
       const dirName =
-        (cliArgs.url as string)
+        (options.url as string)
           ?.split("/")
           .pop()
           ?.replace(/\.git$/, "") || "";
 
       if (dirName) {
-        localEcho.println(`Cloning into '${dirName}'...`);
+        printLn(`Cloning into '${dirName}'...`);
 
         options.dir = join(cd, dirName);
       }
@@ -97,17 +107,17 @@ const processGit = async (
       )?.(options);
 
       if (typeof result === "string") {
-        localEcho.println(result);
+        printLn(result);
       }
     } catch (error) {
-      localEcho.println((error as Error).message);
+      printLn((error as Error).message);
     }
 
     if (UPDATE_FOLDER_COMMANDS.has(command)) {
       updateFolder(cd);
     }
   } else {
-    help(localEcho, commands);
+    help(printLn, commands);
   }
 };
 

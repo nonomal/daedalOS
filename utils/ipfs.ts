@@ -1,11 +1,15 @@
 import {
   HIGH_PRIORITY_REQUEST,
-  IPFS_GATEWAY_URLS,
   MILLISECONDS_IN_SECOND,
   ONE_TIME_PASSIVE_EVENT,
 } from "utils/constants";
 
 let IPFS_GATEWAY_URL = "";
+
+export const IPFS_GATEWAY_URLS = [
+  "https://<CID>.ipfs.dweb.link/",
+  "https://gateway.ipfs.io/ipfs/<CID>/",
+];
 
 const isIpfsGatewayAvailable = (gatewayUrl: string): Promise<boolean> =>
   new Promise((resolve) => {
@@ -34,7 +38,7 @@ const isIpfsGatewayAvailable = (gatewayUrl: string): Promise<boolean> =>
 
     img.src = `${gatewayUrl.replace(
       "<CID>",
-      // https://github.com/ipfs/public-gateway-checker/blob/master/src/constants.ts
+      // https://github.com/ipfs/public-gateway-checker/blob/master/src/constants.ts (IMG_HASH)
       "bafybeibwzifw52ttrkqlikfzext5akxu7lz4xiwjgwzmqcpdzmp3n5vnbe"
     )}?now=${Date.now()}&filename=1x1.png#x-ipfs-companion-no-redirect`;
   });
@@ -59,11 +63,12 @@ export const getIpfsGatewayUrl = async (
     if (!IPFS_GATEWAY_URL) return "";
   }
 
-  const { pathname, protocol, search } = new URL(ipfsUrl);
+  const { hostname, pathname, protocol, search } = new URL(ipfsUrl);
 
   if (protocol !== "ipfs:") return "";
 
-  const [cid = "", ...path] = pathname.split("/").filter(Boolean);
+  const fullPath = `${hostname}${pathname}`;
+  const [cid = "", ...path] = fullPath.split("/").filter(Boolean);
   const { CID } = await import("multiformats");
 
   return `${IPFS_GATEWAY_URL.replace(
@@ -76,17 +81,16 @@ export const getIpfsFileName = async (
   ipfsUrl: string,
   ipfsData: Buffer
 ): Promise<string> => {
-  const { pathname, searchParams } = new URL(ipfsUrl);
+  const { hostname, pathname, searchParams } = new URL(ipfsUrl);
   const fileName = searchParams.get("filename");
 
   if (fileName) return fileName;
 
   const { fileTypeFromBuffer } = await import("file-type");
   const { ext = "" } = (await fileTypeFromBuffer(ipfsData)) || {};
+  const fullPath = `${hostname}${pathname}`;
 
-  return `${pathname.split("/").filter(Boolean).join("_")}${
-    ext ? `.${ext}` : ""
-  }`;
+  return `${fullPath.split("/").filter(Boolean).join("_")}${ext ? `.${ext}` : ""}`;
 };
 
 export const getIpfsResource = async (ipfsUrl: string): Promise<Buffer> => {

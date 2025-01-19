@@ -1,12 +1,11 @@
-import type { LocalEcho } from "components/apps/Terminal/types";
 import { basename, dirname, extname, join } from "path";
-import { loadFiles } from "utils/functions";
-import type { ImageMagickConvertFile } from "utils/imagemagick/types";
+import { blobToBuffer, loadFiles } from "utils/functions";
+import { type ImageMagickConvertFile } from "utils/imagemagick/types";
 
 export const convert = async (
   files: ImageMagickConvertFile[],
   extension: string,
-  localEcho?: LocalEcho
+  printLn?: (message: string) => void
 ): Promise<ImageMagickConvertFile[]> => {
   const returnFiles: ImageMagickConvertFile[] = [];
 
@@ -30,13 +29,11 @@ export const convert = async (
       );
       const output = [...stdout, ...stderr].join("\n");
 
-      if (output) localEcho?.println(output);
+      if (output) printLn?.(output);
 
       returnFiles.push([
         join(dirname(fileName), newName),
-        image?.blob
-          ? Buffer.from(await image.blob.arrayBuffer())
-          : Buffer.from(""),
+        await blobToBuffer(image?.blob),
       ]);
     })
   );
